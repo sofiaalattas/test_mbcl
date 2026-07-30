@@ -1,10 +1,10 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const store = require('./lib/store');
 
 const PORT = process.env.PORT || 3000;
 const TEAM_FILE = path.join(__dirname, 'data', 'team.json');
-const STATUS_FILE = path.join(__dirname, 'data', 'status.json');
 const VALID_STATUSES = ['Belum Mulai', 'Dikerjakan', 'Selesai'];
 const TASK_MAX_LENGTH = 60;
 
@@ -15,22 +15,9 @@ function readTeam() {
   return names;
 }
 
-function readStatuses() {
-  if (!fs.existsSync(STATUS_FILE)) return {};
-  const raw = fs.readFileSync(STATUS_FILE, 'utf8');
-  if (!raw.trim()) return {};
-  return JSON.parse(raw);
-}
-
-function writeStatuses(statuses) {
-  const tmpFile = `${STATUS_FILE}.tmp`;
-  fs.writeFileSync(tmpFile, JSON.stringify(statuses, null, 2));
-  fs.renameSync(tmpFile, STATUS_FILE);
-}
-
-function getBoard() {
+async function getBoard() {
   const team = readTeam();
-  const statuses = readStatuses();
+  const statuses = await store.getAllStatuses(team);
   return team.map((name) => {
     const entry = statuses[name];
     return {
@@ -46,15 +33,15 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/api/team', (req, res) => {
+app.get('/api/team', async (req, res) => {
   try {
-    res.json(getBoard());
+    res.json(await getBoard());
   } catch (err) {
     res.status(500).json({ error: 'Gagal membaca data tim.' });
   }
 });
 
-app.post('/api/status', (req, res) => {
+app.post('/api/status', async (req, res) => {
   try {
     const { name, status, task } = req.body || {};
     const team = readTeam();
@@ -70,20 +57,18 @@ app.post('/api/status', (req, res) => {
       return res.status(400).json({ error: `Nama tugas maksimal ${TASK_MAX_LENGTH} karakter.` });
     }
 
-    const statuses = readStatuses();
-    statuses[name] = {
+    await store.setStatus(name, {
       status,
       task: trimmedTask,
       updatedAt: new Date().toISOString(),
-    };
-    writeStatuses(statuses);
+    });
 
-    res.json(getBoard());
+    res.json(await getBoard());
   } catch (err) {
     res.status(500).json({ error: 'Gagal menyimpan status.' });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Papan Status Tim jalan di http://localhost:${PORT}`);
+  console.log(`Papan Status Tim jalan di http://localhost:${PORT} (penyimpanan: ${store.useKv ? 'Vercel KV/Redis' : 'file lokal'})`);
 });
