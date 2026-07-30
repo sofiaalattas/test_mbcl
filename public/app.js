@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'papan-status-tim:nama-saya';
+const TEMA_STORAGE_KEY = 'papan-status-tim:tema';
 const REFRESH_MS = 8000;
 const DESCRIPTION_MAX_LENGTH = 500;
 const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024; // 5MB, samakan dengan batas di server.js
@@ -7,6 +8,8 @@ const STATUS_KELAS = {
   'Dikerjakan': 'lencana-dikerjakan',
   'Selesai': 'lencana-selesai',
 };
+
+const elTombolTema = document.getElementById('tombol-tema');
 
 const elPilihNama = document.getElementById('pilih-nama');
 const elDaftarNama = document.getElementById('daftar-nama');
@@ -36,6 +39,23 @@ let namaSedangDiedit = null;
 let lampiranTersimpan = null;
 let filePending = null;
 let hapusLampiranFlag = false;
+
+function temaAktif() {
+  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+}
+
+function terapkanTema(tema) {
+  document.documentElement.setAttribute('data-theme', tema);
+  elTombolTema.textContent = tema === 'dark' ? '☀️' : '🌙';
+}
+
+terapkanTema(temaAktif());
+
+elTombolTema.addEventListener('click', () => {
+  const temaBaru = temaAktif() === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(TEMA_STORAGE_KEY, temaBaru);
+  terapkanTema(temaBaru);
+});
 
 function namaSaya() {
   return localStorage.getItem(STORAGE_KEY);

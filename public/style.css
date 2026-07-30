@@ -7,7 +7,19 @@
   --warna-latar: #f4f5f7;
   --warna-kartu: #ffffff;
   --warna-aksen: #2f6fed;
+  --warna-border: #d9dce1;
+  --warna-overlay: rgba(0, 0, 0, 0.45);
   --radius: 16px;
+}
+
+:root[data-theme="dark"] {
+  --warna-teks: #eef0f3;
+  --warna-muted: #a2a5ad;
+  --warna-latar: #121317;
+  --warna-kartu: #1e2025;
+  --warna-aksen: #6d97ff;
+  --warna-border: #3a3d44;
+  --warna-overlay: rgba(0, 0, 0, 0.65);
 }
 
 * {
@@ -21,6 +33,26 @@ body {
   color: var(--warna-teks);
   font-size: 18px;
   line-height: 1.4;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.tombol-tema {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--warna-border);
+  background: var(--warna-kartu);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 h1 {
@@ -56,7 +88,7 @@ h1 {
   font-weight: 600;
   text-align: center;
   background: var(--warna-kartu);
-  border: 2px solid #d9dce1;
+  border: 2px solid var(--warna-border);
   border-radius: var(--radius);
   color: var(--warna-teks);
   cursor: pointer;
@@ -96,7 +128,7 @@ h1 {
   padding: 12px 18px;
   font-size: 16px;
   font-weight: 700;
-  background: #fff;
+  background: var(--warna-kartu);
   color: var(--warna-aksen);
   border: 2px solid var(--warna-aksen);
   border-radius: 12px;
@@ -201,7 +233,7 @@ h1 {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.45);
+  background: var(--warna-overlay);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -213,7 +245,7 @@ h1 {
 }
 
 .editor-kotak {
-  background: #fff;
+  background: var(--warna-kartu);
   width: 100%;
   max-width: 640px;
   border-radius: 20px 20px 0 0;
@@ -243,8 +275,8 @@ h1 {
   font-size: 18px;
   font-weight: 700;
   border-radius: 12px;
-  border: 2px solid #d9dce1;
-  background: #fff;
+  border: 2px solid var(--warna-border);
+  background: var(--warna-kartu);
   color: var(--warna-teks);
   cursor: pointer;
   text-align: center;
@@ -272,7 +304,9 @@ h1 {
   padding: 14px;
   font-size: 18px;
   border-radius: 12px;
-  border: 2px solid #d9dce1;
+  border: 2px solid var(--warna-border);
+  background: var(--warna-kartu);
+  color: var(--warna-teks);
   font-family: inherit;
 }
 
@@ -332,9 +366,9 @@ h1 {
   padding: 14px;
   font-size: 18px;
   font-weight: 600;
-  background: #fff;
+  background: var(--warna-kartu);
   color: var(--warna-muted);
-  border: 2px solid #d9dce1;
+  border: 2px solid var(--warna-border);
   border-radius: 12px;
   cursor: pointer;
 }

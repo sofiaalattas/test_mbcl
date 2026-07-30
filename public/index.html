@@ -5,8 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Papan Status Tim</title>
 <link rel="stylesheet" href="style.css">
+<script>
+(function () {
+  var tema = localStorage.getItem('papan-status-tim:tema');
+  if (tema !== 'dark' && tema !== 'light') {
+    tema = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  document.documentElement.setAttribute('data-theme', tema);
+})();
+</script>
 </head>
 <body>
+
+<button id="tombol-tema" class="tombol-tema" type="button" aria-label="Ganti mode terang/gelap"></button>
 
 <div id="pilih-nama" class="layar">
   <h1>Papan Status Tim</h1>
