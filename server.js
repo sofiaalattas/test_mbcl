@@ -37,8 +37,18 @@ app.get('/api/team', async (req, res) => {
   try {
     res.json(await getBoard());
   } catch (err) {
+    console.error('GET /api/team gagal:', err);
     res.status(500).json({ error: 'Gagal membaca data tim.' });
   }
+});
+
+// Sementara untuk debug masalah koneksi KV di Vercel — hapus setelah beres.
+app.get('/api/debug', (req, res) => {
+  res.json({
+    useKv: store.useKv,
+    hasUrl: Boolean(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL),
+    hasToken: Boolean(process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN),
+  });
 });
 
 app.post('/api/status', async (req, res) => {
@@ -65,6 +75,7 @@ app.post('/api/status', async (req, res) => {
 
     res.json(await getBoard());
   } catch (err) {
+    console.error('POST /api/status gagal:', err);
     res.status(500).json({ error: 'Gagal menyimpan status.' });
   }
 });
