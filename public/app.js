@@ -23,6 +23,7 @@ const elTombolBatal = document.getElementById('tombol-batal');
 
 let editorTerbuka = false;
 let statusTerpilih = null;
+let namaSedangDiedit = null;
 
 function namaSaya() {
   return localStorage.getItem(STORAGE_KEY);
@@ -144,6 +145,7 @@ elTombolGantiNama.addEventListener('click', () => {
 
 function bukaEditor(anggota) {
   editorTerbuka = true;
+  namaSedangDiedit = anggota.name;
   statusTerpilih = anggota.status;
   elInputTugas.value = anggota.task || '';
   elSisaKarakter.textContent = 60 - elInputTugas.value.length;
@@ -158,6 +160,7 @@ function bukaEditor(anggota) {
 
 function tutupEditor() {
   editorTerbuka = false;
+  namaSedangDiedit = null;
   elOverlay.hidden = true;
 }
 
@@ -180,8 +183,14 @@ elTombolBatal.addEventListener('click', () => {
 });
 
 elTombolSimpan.addEventListener('click', async () => {
-  const saya = namaSaya();
   elPesanError.hidden = true;
+
+  if (!namaSedangDiedit) {
+    elPesanError.textContent = 'Nama kamu belum diketahui. Tutup ini lalu pilih nama dulu.';
+    elPesanError.hidden = false;
+    return;
+  }
+
   elTombolSimpan.disabled = true;
 
   try {
@@ -189,7 +198,7 @@ elTombolSimpan.addEventListener('click', async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: saya,
+        name: namaSedangDiedit,
         status: statusTerpilih,
         task: elInputTugas.value,
       }),

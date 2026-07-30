@@ -180,6 +180,10 @@ h1 {
   z-index: 10;
 }
 
+.overlay[hidden] {
+  display: none;
+}
+
 .editor-kotak {
   background: #fff;
   width: 100%;
