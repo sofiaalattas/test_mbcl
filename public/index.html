@@ -17,17 +17,30 @@
 </head>
 <body>
 
-<button id="tombol-tema" class="tombol-tema" type="button" aria-label="Ganti mode terang/gelap"></button>
+<header class="app-bar">
+  <div class="app-bar-brand">
+    <span class="logo-badge">
+      <img src="https://cdn.prod.website-files.com/5eb6815b620703300b660930/61b33581789f2291a7c17425_Logo.svg" alt="MBCL" class="logo-mbcl">
+    </span>
+    <span class="app-bar-judul">Papan Status Tim</span>
+  </div>
+
+  <button id="tombol-tema" class="toggle-tema" type="button" role="switch" aria-checked="false" aria-label="Ganti mode terang/gelap">
+    <span class="toggle-tema-thumb"></span>
+    <span class="toggle-tema-label toggle-tema-label-light">☀ Light</span>
+    <span class="toggle-tema-label toggle-tema-label-dark">☾ Dark</span>
+  </button>
+</header>
+
+<main class="app-main">
 
 <div id="pilih-nama" class="layar">
-  <h1>Papan Status Tim</h1>
   <p class="subjudul">Pilih nama kamu untuk mulai</p>
   <div id="daftar-nama" class="daftar-tombol-nama"></div>
 </div>
 
 <div id="papan" class="layar" hidden>
   <header class="header-papan">
-    <h1>Papan Status Tim</h1>
     <p class="info-masuk">
       Kamu: <strong id="nama-saya-label"></strong>
       · <button id="tombol-ganti-nama" class="tombol-tautan">ganti nama</button>
@@ -37,6 +50,8 @@
 
   <div id="daftar-kartu" class="daftar-kartu"></div>
 </div>
+
+</main>
 
 <div id="editor-overlay" class="overlay" hidden>
   <div class="editor-kotak">

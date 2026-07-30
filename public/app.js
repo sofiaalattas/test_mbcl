@@ -46,7 +46,7 @@ function temaAktif() {
 
 function terapkanTema(tema) {
   document.documentElement.setAttribute('data-theme', tema);
-  elTombolTema.textContent = tema === 'dark' ? '☀️' : '🌙';
+  elTombolTema.setAttribute('aria-checked', tema === 'dark' ? 'true' : 'false');
 }
 
 terapkanTema(temaAktif());

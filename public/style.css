@@ -24,6 +24,7 @@
 
 * {
   box-sizing: border-box;
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
 }
 
 body {
@@ -33,31 +34,128 @@ body {
   color: var(--warna-teks);
   font-size: 18px;
   line-height: 1.4;
-  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.tombol-tema {
-  position: fixed;
-  top: 14px;
-  right: 14px;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 2px solid var(--warna-border);
-  background: var(--warna-kartu);
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 20;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-}
-
-h1 {
+h1, h2 {
   font-size: 28px;
   margin: 0 0 4px 0;
+}
+
+/* ---- App bar (logo + toggle tema) ---- */
+
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--warna-kartu);
+  border-bottom: 1px solid var(--warna-border);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.05);
+}
+
+.app-bar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.logo-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 5px 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.logo-mbcl {
+  display: block;
+  height: clamp(18px, 4vw, 26px);
+  width: auto;
+}
+
+.app-bar-judul {
+  font-size: clamp(15px, 4vw, 19px);
+  font-weight: 700;
+  color: var(--warna-teks);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Sliding Light/Dark toggle */
+
+.toggle-tema {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 128px;
+  height: 38px;
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--warna-border);
+  background: var(--warna-latar);
+  cursor: pointer;
+}
+
+.toggle-tema:hover {
+  box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.15);
+}
+
+.toggle-tema-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  height: calc(100% - 6px);
+  border-radius: 999px;
+  background: var(--warna-aksen);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root[data-theme="dark"] .toggle-tema-thumb {
+  transform: translateX(100%);
+}
+
+.toggle-tema-label {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.toggle-tema-label-light {
+  color: #ffffff;
+}
+
+.toggle-tema-label-dark {
+  color: var(--warna-muted);
+}
+
+:root[data-theme="dark"] .toggle-tema-label-light {
+  color: var(--warna-muted);
+}
+
+:root[data-theme="dark"] .toggle-tema-label-dark {
+  color: #ffffff;
+}
+
+/* ---- Layar umum ---- */
+
+.app-main {
+  display: block;
 }
 
 .layar {
@@ -66,10 +164,15 @@ h1 {
   padding: 24px 16px 48px 16px;
 }
 
+#papan {
+  max-width: 960px;
+}
+
 .subjudul {
-  color: var(--warna-muted);
-  font-size: 18px;
-  margin: 0 0 24px 0;
+  color: var(--warna-teks);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 8px 0 24px 0;
 }
 
 /* ---- Layar pilih nama ---- */
@@ -78,6 +181,14 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .daftar-tombol-nama {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
 }
 
 .tombol-nama {
@@ -100,10 +211,22 @@ h1 {
   border-color: var(--warna-aksen);
 }
 
+@media (hover: hover) {
+  .tombol-nama:hover {
+    border-color: var(--warna-aksen);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  }
+}
+
 /* ---- Header papan ---- */
 
 .header-papan {
   margin-bottom: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .info-masuk {
@@ -124,7 +247,6 @@ h1 {
 
 .tombol-ekspor {
   display: inline-block;
-  margin-top: 12px;
   padding: 12px 18px;
   font-size: 16px;
   font-weight: 700;
@@ -136,6 +258,13 @@ h1 {
   text-align: center;
 }
 
+@media (hover: hover) {
+  .tombol-ekspor:hover {
+    background: var(--warna-aksen);
+    color: #fff;
+  }
+}
+
 /* ---- Kartu anggota ---- */
 
 .daftar-kartu {
@@ -144,12 +273,27 @@ h1 {
   gap: 14px;
 }
 
+@media (min-width: 720px) {
+  .daftar-kartu {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    align-items: start;
+    gap: 16px;
+  }
+}
+
 .kartu {
   background: var(--warna-kartu);
   border-radius: var(--radius);
   padding: 18px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   border: 2px solid transparent;
+}
+
+@media (hover: hover) {
+  .kartu:hover {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+  }
 }
 
 .kartu.kartu-saya {
@@ -237,11 +381,18 @@ h1 {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  z-index: 10;
+  z-index: 40;
 }
 
 .overlay[hidden] {
   display: none;
+}
+
+@media (min-width: 640px) {
+  .overlay {
+    align-items: center;
+    padding: 20px;
+  }
 }
 
 .editor-kotak {
@@ -252,6 +403,19 @@ h1 {
   padding: 24px 20px 32px 20px;
   max-height: 90vh;
   overflow-y: auto;
+  animation: editor-muncul 0.25s ease;
+}
+
+@keyframes editor-muncul {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media (min-width: 640px) {
+  .editor-kotak {
+    max-width: 520px;
+    border-radius: 20px;
+  }
 }
 
 .editor-kotak h2 {
@@ -270,6 +434,12 @@ h1 {
   gap: 10px;
 }
 
+@media (min-width: 420px) {
+  .pilihan-status {
+    flex-direction: row;
+  }
+}
+
 .tombol-status {
   padding: 16px;
   font-size: 18px;
@@ -280,6 +450,7 @@ h1 {
   color: var(--warna-teks);
   cursor: pointer;
   text-align: center;
+  flex: 1;
 }
 
 .tombol-status.aktif[data-status="Belum Mulai"] {
@@ -346,9 +517,15 @@ h1 {
 
 .tombol-editor {
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 10px;
   margin-top: 22px;
+}
+
+@media (min-width: 420px) {
+  .tombol-editor {
+    flex-direction: row-reverse;
+  }
 }
 
 .tombol-utama {
@@ -360,6 +537,7 @@ h1 {
   border: none;
   border-radius: 12px;
   cursor: pointer;
+  flex: 1;
 }
 
 .tombol-sekunder {
@@ -371,4 +549,8 @@ h1 {
   border: 2px solid var(--warna-border);
   border-radius: 12px;
   cursor: pointer;
+}
+
+.tombol-editor .tombol-sekunder {
+  flex: 1;
 }
