@@ -1,5 +1,7 @@
 const STORAGE_KEY = 'papan-status-tim:nama-saya';
 const REFRESH_MS = 8000;
+const DESCRIPTION_MAX_LENGTH = 500;
+const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024; // 5MB, samakan dengan batas di server.js
 const STATUS_KELAS = {
   'Belum Mulai': 'lencana-belum-mulai',
   'Dikerjakan': 'lencana-dikerjakan',
@@ -17,6 +19,13 @@ const elOverlay = document.getElementById('editor-overlay');
 const elPilihanStatus = document.getElementById('pilihan-status');
 const elInputTugas = document.getElementById('input-tugas');
 const elSisaKarakter = document.getElementById('sisa-karakter');
+const elInputDeskripsi = document.getElementById('input-deskripsi');
+const elSisaKarakterDeskripsi = document.getElementById('sisa-karakter-deskripsi');
+const elInputFile = document.getElementById('input-file');
+const elTombolPilihFile = document.getElementById('tombol-pilih-file');
+const elNamaLampiran = document.getElementById('nama-lampiran');
+const elLinkLampiran = document.getElementById('link-lampiran');
+const elTombolHapusLampiran = document.getElementById('tombol-hapus-lampiran');
 const elPesanError = document.getElementById('pesan-error');
 const elTombolSimpan = document.getElementById('tombol-simpan');
 const elTombolBatal = document.getElementById('tombol-batal');
@@ -24,6 +33,9 @@ const elTombolBatal = document.getElementById('tombol-batal');
 let editorTerbuka = false;
 let statusTerpilih = null;
 let namaSedangDiedit = null;
+let lampiranTersimpan = null;
+let filePending = null;
+let hapusLampiranFlag = false;
 
 function namaSaya() {
   return localStorage.getItem(STORAGE_KEY);
@@ -85,12 +97,31 @@ function buatKartu(anggota, milikSaya) {
   tugas.className = 'kartu-tugas' + (anggota.task ? '' : ' kosong');
   tugas.textContent = anggota.task || 'Belum ada tugas';
 
+  kartu.appendChild(baris);
+  kartu.appendChild(tugas);
+
+  if (anggota.description) {
+    const deskripsi = document.createElement('p');
+    deskripsi.className = 'kartu-deskripsi';
+    deskripsi.textContent = anggota.description.length > 80
+      ? anggota.description.slice(0, 80) + '…'
+      : anggota.description;
+    kartu.appendChild(deskripsi);
+  }
+
+  if (anggota.attachment) {
+    const lampiran = document.createElement('a');
+    lampiran.className = 'kartu-lampiran';
+    lampiran.href = anggota.attachment.url;
+    lampiran.target = '_blank';
+    lampiran.rel = 'noopener';
+    lampiran.textContent = '📎 ' + anggota.attachment.name;
+    kartu.appendChild(lampiran);
+  }
+
   const waktu = document.createElement('p');
   waktu.className = 'kartu-waktu';
   waktu.textContent = waktuRelatif(anggota.updatedAt);
-
-  kartu.appendChild(baris);
-  kartu.appendChild(tugas);
   kartu.appendChild(waktu);
 
   if (milikSaya) {
@@ -143,13 +174,38 @@ elTombolGantiNama.addEventListener('click', () => {
   render();
 });
 
+function perbaruiTampilanLampiran() {
+  if (filePending) {
+    elNamaLampiran.textContent = filePending.name;
+    elLinkLampiran.hidden = true;
+    elTombolHapusLampiran.hidden = false;
+  } else if (hapusLampiranFlag || !lampiranTersimpan) {
+    elNamaLampiran.textContent = 'Tidak ada lampiran';
+    elLinkLampiran.hidden = true;
+    elTombolHapusLampiran.hidden = true;
+  } else {
+    elNamaLampiran.textContent = lampiranTersimpan.name;
+    elLinkLampiran.href = lampiranTersimpan.url;
+    elLinkLampiran.hidden = false;
+    elTombolHapusLampiran.hidden = false;
+  }
+}
+
 function bukaEditor(anggota) {
   editorTerbuka = true;
   namaSedangDiedit = anggota.name;
   statusTerpilih = anggota.status;
   elInputTugas.value = anggota.task || '';
   elSisaKarakter.textContent = 60 - elInputTugas.value.length;
+  elInputDeskripsi.value = anggota.description || '';
+  elSisaKarakterDeskripsi.textContent = DESCRIPTION_MAX_LENGTH - elInputDeskripsi.value.length;
   elPesanError.hidden = true;
+
+  lampiranTersimpan = anggota.attachment || null;
+  filePending = null;
+  hapusLampiranFlag = false;
+  elInputFile.value = '';
+  perbaruiTampilanLampiran();
 
   Array.from(elPilihanStatus.children).forEach((tombol) => {
     tombol.classList.toggle('aktif', tombol.dataset.status === statusTerpilih);
@@ -161,6 +217,9 @@ function bukaEditor(anggota) {
 function tutupEditor() {
   editorTerbuka = false;
   namaSedangDiedit = null;
+  lampiranTersimpan = null;
+  filePending = null;
+  hapusLampiranFlag = false;
   elOverlay.hidden = true;
 }
 
@@ -175,6 +234,38 @@ Array.from(elPilihanStatus.children).forEach((tombol) => {
 
 elInputTugas.addEventListener('input', () => {
   elSisaKarakter.textContent = 60 - elInputTugas.value.length;
+});
+
+elInputDeskripsi.addEventListener('input', () => {
+  elSisaKarakterDeskripsi.textContent = DESCRIPTION_MAX_LENGTH - elInputDeskripsi.value.length;
+});
+
+elTombolPilihFile.addEventListener('click', () => {
+  elInputFile.click();
+});
+
+elInputFile.addEventListener('change', () => {
+  const file = elInputFile.files[0];
+  if (!file) return;
+
+  if (file.size > MAX_ATTACHMENT_SIZE) {
+    elPesanError.textContent = `Ukuran lampiran maksimal ${MAX_ATTACHMENT_SIZE / (1024 * 1024)}MB.`;
+    elPesanError.hidden = false;
+    elInputFile.value = '';
+    return;
+  }
+
+  elPesanError.hidden = true;
+  filePending = file;
+  hapusLampiranFlag = false;
+  perbaruiTampilanLampiran();
+});
+
+elTombolHapusLampiran.addEventListener('click', () => {
+  filePending = null;
+  hapusLampiranFlag = true;
+  elInputFile.value = '';
+  perbaruiTampilanLampiran();
 });
 
 elTombolBatal.addEventListener('click', () => {
@@ -194,14 +285,20 @@ elTombolSimpan.addEventListener('click', async () => {
   elTombolSimpan.disabled = true;
 
   try {
+    const formData = new FormData();
+    formData.append('name', namaSedangDiedit);
+    formData.append('status', statusTerpilih);
+    formData.append('task', elInputTugas.value);
+    formData.append('description', elInputDeskripsi.value);
+    if (filePending) {
+      formData.append('attachment', filePending);
+    } else if (hapusLampiranFlag) {
+      formData.append('removeAttachment', 'true');
+    }
+
     const res = await fetch('/api/status', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: namaSedangDiedit,
-        status: statusTerpilih,
-        task: elInputTugas.value,
-      }),
+      body: formData,
     });
     const data = await res.json();
 

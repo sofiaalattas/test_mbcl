@@ -4,9 +4,10 @@ Satu layar web sederhana untuk melihat status kerja tim (Belum Mulai / Dikerjaka
 
 ## Cara kerja singkat
 
-- Setiap anggota membuka link di HP, memilih namanya sekali (tersimpan di HP itu), lalu bisa mengubah status & tugas singkat miliknya sendiri.
+- Setiap anggota membuka link di HP, memilih namanya sekali (tersimpan di HP itu), lalu bisa mengubah status, tugas singkat, deskripsi, dan lampiran file miliknya sendiri.
 - Semua orang melihat papan yang sama, otomatis ter-update setiap ~8 detik.
 - Tidak ada tambah/hapus anggota dari UI — daftar nama diatur lewat file konfigurasi oleh admin (kamu).
+- Tombol **Export CSV** di halaman utama mengunduh daftar nama, status, dan tugas singkat terkini.
 
 ## 1. Atur daftar anggota tim
 
@@ -56,18 +57,34 @@ Kalau suatu saat pindah dari Vercel, aplikasi ini tetap jalan biasa sebagai serv
 
 Setelah live, cukup share satu link ke semua anggota tim (via WhatsApp), dan minta mereka membukanya dari HP masing-masing lalu memilih nama sekali.
 
+## 4. Lampiran file (Vercel Blob)
+
+Lampiran yang diunggah lewat popup "Ubah Status Kamu" disimpan lewat pola yang sama seperti status: **Vercel Blob** di production, file lokal (`data/uploads/`) kalau env var belum ada (mis. waktu development).
+
+1. Di dashboard project Vercel → tab **Storage** → **Create Database** (atau "Browse Marketplace") → pilih **Blob**.
+2. **Connect** ke project ini untuk environment **Production** (dan **Preview** kalau mau).
+3. Vercel otomatis menambahkan environment variable `BLOB_READ_WRITE_TOKEN`.
+4. Redeploy project.
+
+Kalau `BLOB_READ_WRITE_TOKEN` belum di-set di Vercel, upload lampiran tetap "berhasil" secara teknis tapi filenya tersimpan di disk sementara Vercel yang bisa hilang kapan saja — jadi pastikan langkah di atas sudah dilakukan sebelum tim mulai pakai fitur lampiran.
+
+Batas ukuran lampiran: **5MB per file**. Tipe file tidak dibatasi.
+
 ## Struktur file
 
 ```
-server.js          -> server (API + menyajikan halaman web)
-lib/store.js        -> lapisan penyimpanan status: Redis (Vercel KV) kalau tersedia, file lokal kalau tidak
-public/             -> halaman web (HTML/CSS/JS polos, tanpa framework)
-data/team.json      -> daftar nama anggota tim (edit manual oleh admin)
-data/status.json    -> fallback penyimpanan status untuk development lokal (dibuat otomatis, jangan diedit manual)
+server.js             -> server (API + menyajikan halaman web)
+lib/store.js           -> lapisan penyimpanan status: Redis (Vercel KV) kalau tersedia, file lokal kalau tidak
+lib/attachments.js      -> lapisan penyimpanan lampiran: Vercel Blob kalau tersedia, file lokal kalau tidak
+public/                -> halaman web (HTML/CSS/JS polos, tanpa framework)
+data/team.json         -> daftar nama anggota tim (edit manual oleh admin)
+data/status.json       -> fallback penyimpanan status untuk development lokal (dibuat otomatis, jangan diedit manual)
+data/uploads/          -> fallback penyimpanan lampiran untuk development lokal (dibuat otomatis, jangan diedit manual)
 ```
 
 ## Batasan versi pertama (sengaja disederhanakan)
 
 - Tidak ada login/password — siapa pun yang tahu link bisa memilih nama siapa saja. Cocok untuk tim kecil yang saling percaya (mirip grup WhatsApp).
-- Tidak ada riwayat/histori status, hanya status terakhir yang ditampilkan.
+- Tidak ada riwayat/histori status, hanya status terakhir yang ditampilkan (termasuk deskripsi & lampiran — ganti status akan menimpa yang lama).
 - Tambah/hapus anggota hanya lewat edit file `data/team.json`, tidak ada tombol di UI.
+- Satu lampiran per anggota (mengunggah file baru otomatis mengganti file lama).

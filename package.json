@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",
-    "express": "^4.19.2"
+    "@vercel/blob": "^2.6.1",
+    "express": "^4.19.2",
+    "multer": "^2.2.0"
   }
 }

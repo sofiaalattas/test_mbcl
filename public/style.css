@@ -90,6 +90,20 @@ h1 {
   padding: 0;
 }
 
+.tombol-ekspor {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 12px 18px;
+  font-size: 16px;
+  font-weight: 700;
+  background: #fff;
+  color: var(--warna-aksen);
+  border: 2px solid var(--warna-aksen);
+  border-radius: 12px;
+  text-decoration: none;
+  text-align: center;
+}
+
 /* ---- Kartu anggota ---- */
 
 .daftar-kartu {
@@ -148,6 +162,20 @@ h1 {
 .kartu-tugas.kosong {
   color: var(--warna-muted);
   font-style: italic;
+}
+
+.kartu-deskripsi {
+  font-size: 15px;
+  color: var(--warna-muted);
+  margin: 0 0 8px 0;
+}
+
+.kartu-lampiran {
+  display: inline-block;
+  font-size: 14px;
+  color: var(--warna-aksen);
+  margin: 0 0 8px 0;
+  text-decoration: none;
 }
 
 .kartu-waktu {
@@ -238,12 +266,35 @@ h1 {
   color: #fff;
 }
 
-#input-tugas {
+#input-tugas,
+#input-deskripsi {
   width: 100%;
   padding: 14px;
   font-size: 18px;
   border-radius: 12px;
   border: 2px solid #d9dce1;
+  font-family: inherit;
+}
+
+#input-deskripsi {
+  resize: vertical;
+}
+
+.area-lampiran {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.info-lampiran {
+  font-size: 15px;
+  color: var(--warna-muted);
+  margin: 0;
+}
+
+.info-lampiran a {
+  color: var(--warna-aksen);
 }
 
 .hitung-karakter {

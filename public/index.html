@@ -21,6 +21,7 @@
       Kamu: <strong id="nama-saya-label"></strong>
       · <button id="tombol-ganti-nama" class="tombol-tautan">ganti nama</button>
     </p>
+    <a id="tombol-ekspor" class="tombol-ekspor" href="/api/export.csv" download>Export CSV</a>
   </header>
 
   <div id="daftar-kartu" class="daftar-kartu"></div>
@@ -40,6 +41,21 @@
     <p class="label-editor">Tugas singkat</p>
     <input type="text" id="input-tugas" maxlength="60" placeholder="Contoh: Desain banner klien X">
     <p class="hitung-karakter"><span id="sisa-karakter">60</span> karakter tersisa</p>
+
+    <p class="label-editor">Deskripsi (opsional)</p>
+    <textarea id="input-deskripsi" maxlength="500" rows="4" placeholder="Detail tambahan tentang status ini..."></textarea>
+    <p class="hitung-karakter"><span id="sisa-karakter-deskripsi">500</span> karakter tersisa</p>
+
+    <p class="label-editor">Lampiran (opsional)</p>
+    <div class="area-lampiran">
+      <input type="file" id="input-file" hidden>
+      <button type="button" id="tombol-pilih-file" class="tombol-sekunder">Pilih File</button>
+      <p class="info-lampiran">
+        <span id="nama-lampiran">Tidak ada lampiran</span>
+        <a id="link-lampiran" href="#" target="_blank" rel="noopener" hidden>(lihat)</a>
+      </p>
+      <button type="button" id="tombol-hapus-lampiran" class="tombol-tautan" hidden>Hapus lampiran</button>
+    </div>
 
     <p id="pesan-error" class="pesan-error" hidden></p>
 
