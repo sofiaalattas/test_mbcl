@@ -1,0 +1,285 @@
+:root {
+  --warna-belum: #e74c3c;
+  --warna-dikerjakan: #f39c12;
+  --warna-selesai: #27ae60;
+  --warna-teks: #1c1c1c;
+  --warna-muted: #6b6b6b;
+  --warna-latar: #f4f5f7;
+  --warna-kartu: #ffffff;
+  --warna-aksen: #2f6fed;
+  --radius: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--warna-latar);
+  color: var(--warna-teks);
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+h1 {
+  font-size: 28px;
+  margin: 0 0 4px 0;
+}
+
+.layar {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 48px 16px;
+}
+
+.subjudul {
+  color: var(--warna-muted);
+  font-size: 18px;
+  margin: 0 0 24px 0;
+}
+
+/* ---- Layar pilih nama ---- */
+
+.daftar-tombol-nama {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tombol-nama {
+  display: block;
+  width: 100%;
+  padding: 20px;
+  font-size: 22px;
+  font-weight: 600;
+  text-align: center;
+  background: var(--warna-kartu);
+  border: 2px solid #d9dce1;
+  border-radius: var(--radius);
+  color: var(--warna-teks);
+  cursor: pointer;
+}
+
+.tombol-nama:active {
+  background: var(--warna-aksen);
+  color: #fff;
+  border-color: var(--warna-aksen);
+}
+
+/* ---- Header papan ---- */
+
+.header-papan {
+  margin-bottom: 20px;
+}
+
+.info-masuk {
+  font-size: 16px;
+  color: var(--warna-muted);
+  margin: 0;
+}
+
+.tombol-tautan {
+  background: none;
+  border: none;
+  color: var(--warna-aksen);
+  font-size: 16px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ---- Kartu anggota ---- */
+
+.daftar-kartu {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.kartu {
+  background: var(--warna-kartu);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border: 2px solid transparent;
+}
+
+.kartu.kartu-saya {
+  border-color: var(--warna-aksen);
+}
+
+.kartu-baris-atas {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.kartu-nama {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.lencana-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.lencana-belum-mulai { background: var(--warna-belum); }
+.lencana-dikerjakan { background: var(--warna-dikerjakan); }
+.lencana-selesai { background: var(--warna-selesai); }
+
+.kartu-tugas {
+  font-size: 18px;
+  margin: 0 0 8px 0;
+}
+
+.kartu-tugas.kosong {
+  color: var(--warna-muted);
+  font-style: italic;
+}
+
+.kartu-waktu {
+  font-size: 14px;
+  color: var(--warna-muted);
+  margin: 0 0 12px 0;
+}
+
+.tombol-ubah {
+  width: 100%;
+  padding: 14px;
+  font-size: 18px;
+  font-weight: 700;
+  background: var(--warna-aksen);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+/* ---- Overlay editor ---- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 10;
+}
+
+.editor-kotak {
+  background: #fff;
+  width: 100%;
+  max-width: 640px;
+  border-radius: 20px 20px 0 0;
+  padding: 24px 20px 32px 20px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.editor-kotak h2 {
+  margin-top: 0;
+  font-size: 22px;
+}
+
+.label-editor {
+  font-weight: 700;
+  margin: 18px 0 8px 0;
+}
+
+.pilihan-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tombol-status {
+  padding: 16px;
+  font-size: 18px;
+  font-weight: 700;
+  border-radius: 12px;
+  border: 2px solid #d9dce1;
+  background: #fff;
+  color: var(--warna-teks);
+  cursor: pointer;
+  text-align: center;
+}
+
+.tombol-status.aktif[data-status="Belum Mulai"] {
+  background: var(--warna-belum);
+  border-color: var(--warna-belum);
+  color: #fff;
+}
+.tombol-status.aktif[data-status="Dikerjakan"] {
+  background: var(--warna-dikerjakan);
+  border-color: var(--warna-dikerjakan);
+  color: #fff;
+}
+.tombol-status.aktif[data-status="Selesai"] {
+  background: var(--warna-selesai);
+  border-color: var(--warna-selesai);
+  color: #fff;
+}
+
+#input-tugas {
+  width: 100%;
+  padding: 14px;
+  font-size: 18px;
+  border-radius: 12px;
+  border: 2px solid #d9dce1;
+}
+
+.hitung-karakter {
+  font-size: 14px;
+  color: var(--warna-muted);
+  margin: 6px 0 0 0;
+  text-align: right;
+}
+
+.pesan-error {
+  color: var(--warna-belum);
+  font-weight: 600;
+  margin: 14px 0 0 0;
+}
+
+.tombol-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.tombol-utama {
+  padding: 16px;
+  font-size: 20px;
+  font-weight: 700;
+  background: var(--warna-aksen);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.tombol-sekunder {
+  padding: 14px;
+  font-size: 18px;
+  font-weight: 600;
+  background: #fff;
+  color: var(--warna-muted);
+  border: 2px solid #d9dce1;
+  border-radius: 12px;
+  cursor: pointer;
+}

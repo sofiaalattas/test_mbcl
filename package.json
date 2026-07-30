@@ -1,0 +1,13 @@
+{
+  "name": "papan-status-tim",
+  "version": "1.0.0",
+  "description": "Papan status kerja tim sederhana - satu layar, tanpa login rumit",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

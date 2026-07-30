@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Papan Status Tim</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="pilih-nama" class="layar">
+  <h1>Papan Status Tim</h1>
+  <p class="subjudul">Pilih nama kamu untuk mulai</p>
+  <div id="daftar-nama" class="daftar-tombol-nama"></div>
+</div>
+
+<div id="papan" class="layar" hidden>
+  <header class="header-papan">
+    <h1>Papan Status Tim</h1>
+    <p class="info-masuk">
+      Kamu: <strong id="nama-saya-label"></strong>
+      · <button id="tombol-ganti-nama" class="tombol-tautan">ganti nama</button>
+    </p>
+  </header>
+
+  <div id="daftar-kartu" class="daftar-kartu"></div>
+</div>
+
+<div id="editor-overlay" class="overlay" hidden>
+  <div class="editor-kotak">
+    <h2>Ubah Status Kamu</h2>
+
+    <p class="label-editor">Status kerja</p>
+    <div class="pilihan-status" id="pilihan-status">
+      <button type="button" class="tombol-status" data-status="Belum Mulai">Belum Mulai</button>
+      <button type="button" class="tombol-status" data-status="Dikerjakan">Dikerjakan</button>
+      <button type="button" class="tombol-status" data-status="Selesai">Selesai</button>
+    </div>
+
+    <p class="label-editor">Tugas singkat</p>
+    <input type="text" id="input-tugas" maxlength="60" placeholder="Contoh: Desain banner klien X">
+    <p class="hitung-karakter"><span id="sisa-karakter">60</span> karakter tersisa</p>
+
+    <p id="pesan-error" class="pesan-error" hidden></p>
+
+    <div class="tombol-editor">
+      <button id="tombol-simpan" class="tombol-utama">Simpan</button>
+      <button id="tombol-batal" class="tombol-sekunder">Batal</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
