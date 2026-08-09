@@ -1,4 +1,4 @@
-# Financial Dashboard — PT PNG
+# Financial Dashboard — PT Manufaktur Indonesia Sejahtera
 
 Dashboard eksekutif keuangan berbasis upload file General Ledger (GL) dari ESB. Upload 1 file Excel, dapatkan otomatis: Ringkasan Eksekutif, Laba Rugi, Neraca, Cash Flow (estimasi), dan Kinerja Cabang — lengkap dengan filter, drill-down, dan export ke Excel.
 

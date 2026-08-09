@@ -45,7 +45,7 @@ async function main() {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('GL');
 
-  sheet.getCell('A1').value = 'PT PNG - General Ledger Report (Contoh/Sample)';
+  sheet.getCell('A1').value = 'PT Manufaktur Indonesia Sejahtera - General Ledger Report (Contoh/Sample)';
   sheet.getCell('A2').value = 'Period: 01-12-2025 s/d 31-05-2026';
 
   const headers = ['Tanggal', 'CoA No', 'CoA Description', 'Branch', 'Department', 'Dr Amount', 'Cr Amount', 'Balance'];

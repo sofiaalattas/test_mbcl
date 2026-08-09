@@ -1,7 +1,7 @@
 {
-  "name": "financial-dashboard-png",
+  "name": "financial-dashboard-manufaktur-indonesia-sejahtera",
   "version": "1.0.0",
-  "description": "Dashboard eksekutif keuangan (GL upload -> P&L, Neraca, Cash Flow, Kinerja Cabang) untuk PT PNG",
+  "description": "Dashboard eksekutif keuangan (GL upload -> P&L, Neraca, Cash Flow, Kinerja Cabang) untuk PT Manufaktur Indonesia Sejahtera",
   "private": true,
   "main": "server.js",
   "scripts": {
