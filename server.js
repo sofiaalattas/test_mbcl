@@ -97,7 +97,14 @@ app.post('/api/upload', handleUpload, async (req, res) => {
       rows: parsed.rows,
       sourceAttachment,
     };
-    await store.setGL(glData);
+    try {
+      await store.setGL(glData);
+    } catch (err) {
+      if (err instanceof store.GLDataTooLargeError) {
+        return res.status(413).json({ error: err.message });
+      }
+      throw err;
+    }
 
     res.json({ success: true, meta: glData.meta });
   } catch (err) {
