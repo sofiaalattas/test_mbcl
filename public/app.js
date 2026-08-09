@@ -1,342 +1,651 @@
-const STORAGE_KEY = 'papan-status-tim:nama-saya';
-const TEMA_STORAGE_KEY = 'papan-status-tim:tema';
-const REFRESH_MS = 8000;
-const DESCRIPTION_MAX_LENGTH = 500;
-const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024; // 5MB, samakan dengan batas di server.js
-const STATUS_KELAS = {
-  'Belum Mulai': 'lencana-belum-mulai',
-  'Dikerjakan': 'lencana-dikerjakan',
-  'Selesai': 'lencana-selesai',
-};
+const TOKEN_KEY = 'findash:token';
+const EXPIRES_KEY = 'findash:expiresAt';
+const TEMA_STORAGE_KEY = 'findash:tema';
+const REFRESH_MS = 60000;
 
+const fmtIDR = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
+const fmtNum = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
+
+function rupiah(n) {
+  return fmtIDR.format(n || 0);
+}
+function positifNegatif(n) {
+  return n < 0 ? 'nilai-negatif' : 'nilai-positif';
+}
+
+// ---- Tema ----
 const elTombolTema = document.getElementById('tombol-tema');
-
-const elPilihNama = document.getElementById('pilih-nama');
-const elDaftarNama = document.getElementById('daftar-nama');
-const elPapan = document.getElementById('papan');
-const elDaftarKartu = document.getElementById('daftar-kartu');
-const elNamaSayaLabel = document.getElementById('nama-saya-label');
-const elTombolGantiNama = document.getElementById('tombol-ganti-nama');
-
-const elOverlay = document.getElementById('editor-overlay');
-const elPilihanStatus = document.getElementById('pilihan-status');
-const elInputTugas = document.getElementById('input-tugas');
-const elSisaKarakter = document.getElementById('sisa-karakter');
-const elInputDeskripsi = document.getElementById('input-deskripsi');
-const elSisaKarakterDeskripsi = document.getElementById('sisa-karakter-deskripsi');
-const elInputFile = document.getElementById('input-file');
-const elTombolPilihFile = document.getElementById('tombol-pilih-file');
-const elNamaLampiran = document.getElementById('nama-lampiran');
-const elLinkLampiran = document.getElementById('link-lampiran');
-const elTombolHapusLampiran = document.getElementById('tombol-hapus-lampiran');
-const elPesanError = document.getElementById('pesan-error');
-const elTombolSimpan = document.getElementById('tombol-simpan');
-const elTombolBatal = document.getElementById('tombol-batal');
-
-let editorTerbuka = false;
-let statusTerpilih = null;
-let namaSedangDiedit = null;
-let lampiranTersimpan = null;
-let filePending = null;
-let hapusLampiranFlag = false;
-
 function temaAktif() {
   return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
 }
-
 function terapkanTema(tema) {
   document.documentElement.setAttribute('data-theme', tema);
   elTombolTema.setAttribute('aria-checked', tema === 'dark' ? 'true' : 'false');
 }
-
-terapkanTema(temaAktif());
-
+terapkanTema(localStorage.getItem(TEMA_STORAGE_KEY) || temaAktif());
 elTombolTema.addEventListener('click', () => {
-  const temaBaru = temaAktif() === 'dark' ? 'light' : 'dark';
-  localStorage.setItem(TEMA_STORAGE_KEY, temaBaru);
-  terapkanTema(temaBaru);
+  const t = temaAktif() === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(TEMA_STORAGE_KEY, t);
+  terapkanTema(t);
+  redrawAllCharts();
 });
 
-function namaSaya() {
-  return localStorage.getItem(STORAGE_KEY);
+// ---- Auth ----
+const elLoginOverlay = document.getElementById('login-overlay');
+const elApp = document.getElementById('app');
+const elLoginPassword = document.getElementById('login-password');
+const elLoginError = document.getElementById('login-error');
+const elLoginSubmit = document.getElementById('login-submit');
+
+function getToken() {
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  const expiresAt = Number(sessionStorage.getItem(EXPIRES_KEY) || 0);
+  if (!token || Date.now() > expiresAt) return null;
+  return token;
 }
 
+function showLogin() {
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(EXPIRES_KEY);
+  elLoginOverlay.hidden = false;
+  elApp.hidden = true;
+}
+
+function showApp() {
+  elLoginOverlay.hidden = true;
+  elApp.hidden = false;
+  init();
+}
+
+async function doLogin() {
+  elLoginError.hidden = true;
+  elLoginSubmit.disabled = true;
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: elLoginPassword.value }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      elLoginError.textContent = data.error || 'Gagal login.';
+      elLoginError.hidden = false;
+      return;
+    }
+    sessionStorage.setItem(TOKEN_KEY, data.token);
+    sessionStorage.setItem(EXPIRES_KEY, String(data.expiresAt));
+    elLoginPassword.value = '';
+    showApp();
+  } catch (e) {
+    elLoginError.textContent = 'Tidak bisa terhubung ke server.';
+    elLoginError.hidden = false;
+  } finally {
+    elLoginSubmit.disabled = false;
+  }
+}
+elLoginSubmit.addEventListener('click', doLogin);
+elLoginPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+
+document.getElementById('tombol-logout').addEventListener('click', showLogin);
+
+async function api(pathAndQuery, opts = {}) {
+  const token = getToken();
+  if (!token) { showLogin(); throw new Error('no-session'); }
+  const res = await fetch(pathAndQuery, {
+    ...opts,
+    headers: { ...(opts.headers || {}), Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) { showLogin(); throw new Error('unauthorized'); }
+  return res;
+}
+
+// ---- State & filters (disimpan di URL supaya bisa dishare) ----
+let currentMeta = null;
+const charts = {};
+
+function readStateFromURL() {
+  const p = new URLSearchParams(location.search);
+  return {
+    tab: p.get('tab') || 'overview',
+    period: p.get('period') || 'ALL',
+    branch: p.get('branch') || 'ALL',
+    dept: p.get('dept') || 'ALL',
+  };
+}
+function writeStateToURL(state) {
+  const p = new URLSearchParams();
+  p.set('tab', state.tab);
+  if (state.period && state.period !== 'ALL') p.set('period', state.period);
+  if (state.branch && state.branch !== 'ALL') p.set('branch', state.branch);
+  if (state.dept && state.dept !== 'ALL') p.set('dept', state.dept);
+  history.replaceState(null, '', `?${p.toString()}`);
+}
+
+let state = readStateFromURL();
+
+function filterQuery() {
+  const p = new URLSearchParams();
+  if (state.period !== 'ALL') p.set('period', state.period);
+  if (state.branch !== 'ALL') p.set('branch', state.branch);
+  if (state.dept !== 'ALL') p.set('dept', state.dept);
+  return p.toString();
+}
+
+// ---- Tabs ----
+const elTabNav = document.getElementById('tab-nav');
+elTabNav.addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab-item');
+  if (!btn) return;
+  setTab(btn.dataset.tab);
+});
+
+function setTab(tab) {
+  state.tab = tab;
+  writeStateToURL(state);
+  Array.from(elTabNav.children).forEach((b) => b.classList.toggle('aktif', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach((el) => (el.hidden = el.id !== `tab-${tab}`));
+  document.getElementById('filter-bar').hidden = tab === 'upload';
+  loadActiveTab();
+}
+
+// ---- Filters ----
+const elFilterPeriod = document.getElementById('filter-period');
+const elFilterBranch = document.getElementById('filter-branch');
+const elFilterDept = document.getElementById('filter-dept');
+const elFilterDeptField = document.getElementById('filter-dept-field');
+
+function populateFilters(meta) {
+  elFilterPeriod.innerHTML = '<option value="ALL">Semua (YTD)</option>' +
+    (meta.periods || []).map((p) => `<option value="${p}">${p}</option>`).join('');
+  elFilterBranch.innerHTML = '<option value="ALL">Semua Cabang</option>' +
+    (meta.branches || []).map((b) => `<option value="${b}">${b}</option>`).join('');
+  if (meta.departments && meta.departments.length) {
+    elFilterDept.innerHTML = '<option value="ALL">Semua Departemen</option>' +
+      meta.departments.map((d) => `<option value="${d}">${d}</option>`).join('');
+    elFilterDeptField.hidden = false;
+  } else {
+    elFilterDeptField.hidden = true;
+  }
+  elFilterPeriod.value = state.period;
+  elFilterBranch.value = state.branch;
+  elFilterDept.value = state.dept;
+}
+
+[[elFilterPeriod, 'period'], [elFilterBranch, 'branch'], [elFilterDept, 'dept']].forEach(([el, key]) => {
+  el.addEventListener('change', () => {
+    state[key] = el.value;
+    writeStateToURL(state);
+    loadActiveTab();
+  });
+});
+
+// ---- Chart helper ----
+function chartColors() {
+  const dark = temaAktif() === 'dark';
+  return {
+    text: dark ? '#eef0f3' : '#1c1c1c',
+    grid: dark ? '#3a3d44' : '#e3e5e9',
+    accent: '#2f6fed',
+    accent2: '#27ae60',
+    danger: '#e74c3c',
+    palette: ['#2f6fed', '#27ae60', '#f39c12', '#e74c3c', '#8e44ad', '#16a085', '#d35400', '#2c3e50'],
+  };
+}
+
+// Sengaja menahan (bukan melempar) error di sini: kalau Chart.js gagal dimuat
+// (mis. CDN diblokir di jaringan user), laporan tetap harus menampilkan KPI
+// card & tabel — hanya grafiknya yang kosong, bukan seluruh halaman rusak.
+function makeChart(id, config) {
+  try {
+    const canvas = document.getElementById(id);
+    if (charts[id]) charts[id].destroy();
+    if (typeof Chart === 'undefined') throw new Error('Chart.js belum termuat');
+    charts[id] = new Chart(canvas, config);
+    return charts[id];
+  } catch (err) {
+    console.error(`Gagal render chart "${id}":`, err);
+    return null;
+  }
+}
+
+function redrawAllCharts() {
+  loadActiveTab();
+}
+
+// ---- KPI card render ----
+function renderKpiGrid(container, items) {
+  container.innerHTML = items.map((it) => `
+    <div class="kpi-card">
+      <p class="kpi-label">${it.label}</p>
+      <p class="kpi-value ${it.klass || ''}">${it.value}</p>
+      ${it.sub ? `<p class="kpi-sub">${it.sub}</p>` : ''}
+    </div>`).join('');
+}
+
+// ---- No data banner ----
+function showNoData(show) {
+  document.getElementById('no-data-banner').hidden = !show;
+}
+
+// ---- Overview ----
+async function loadOverview() {
+  const res = await api(`/api/reports/overview?${filterQuery()}`);
+  if (!res.ok) return;
+  const { data } = await res.json();
+  const c = chartColors();
+
+  renderKpiGrid(document.getElementById('overview-kpi'), [
+    { label: 'Total Revenue', value: rupiah(data.kpi.revenue) },
+    { label: 'Total Expense', value: rupiah(data.kpi.expense) },
+    { label: 'Net Income', value: rupiah(data.kpi.netIncome), klass: positifNegatif(data.kpi.netIncome) },
+    { label: 'Profit Margin', value: `${fmtNum.format(data.kpi.profitMargin)}%`, klass: positifNegatif(data.kpi.profitMargin) },
+  ]);
+
+  makeChart('chart-trend', {
+    type: 'line',
+    data: {
+      labels: data.monthlyTrend.map((m) => m.period),
+      datasets: [
+        { label: 'Revenue', data: data.monthlyTrend.map((m) => m.revenue), borderColor: c.accent, backgroundColor: c.accent, tension: 0.3 },
+        { label: 'Expense', data: data.monthlyTrend.map((m) => m.expense), borderColor: c.danger, backgroundColor: c.danger, tension: 0.3 },
+      ],
+    },
+    options: baseChartOptions(c),
+  });
+
+  makeChart('chart-expense', {
+    type: 'bar',
+    data: {
+      labels: data.expenseBreakdown.map((e) => e.category),
+      datasets: [{ label: 'Expense', data: data.expenseBreakdown.map((e) => e.amount), backgroundColor: c.accent }],
+    },
+    options: { ...baseChartOptions(c), indexAxis: 'y' },
+  });
+}
+
+function baseChartOptions(c) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: c.text } } },
+    scales: {
+      x: { ticks: { color: c.text }, grid: { color: c.grid } },
+      y: { ticks: { color: c.text }, grid: { color: c.grid } },
+    },
+  };
+}
+
+// Pie/doughnut tidak punya sumbu x/y — jangan pakai baseChartOptions (yang set scales),
+// karena Chart.js akan tetap menggambar garis skala kosong di sekelilingnya.
+function pieChartOptions(c) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: c.text } } },
+  };
+}
+
+// ---- P&L ----
+async function loadPnL() {
+  const res = await api(`/api/reports/pnl?${filterQuery()}`);
+  if (!res.ok) return;
+  const { data } = await res.json();
+  const c = chartColors();
+
+  renderKpiGrid(document.getElementById('pnl-kpi'), [
+    { label: 'Revenue', value: rupiah(data.summary.revenue) },
+    { label: 'COGS', value: rupiah(data.summary.cogs) },
+    { label: 'Gross Profit', value: rupiah(data.summary.grossProfit), klass: positifNegatif(data.summary.grossProfit) },
+    { label: 'Operating Expense', value: rupiah(data.summary.opex) },
+    { label: 'Net Income', value: rupiah(data.summary.netIncome), klass: positifNegatif(data.summary.netIncome) },
+    { label: 'Profit Margin', value: `${fmtNum.format(data.summary.profitMargin)}%` },
+  ]);
+
+  makeChart('chart-pnl-waterfall', {
+    type: 'bar',
+    data: {
+      labels: ['Revenue', 'COGS', 'Gross Profit', 'OpEx', 'Net Income'],
+      datasets: [{
+        data: [data.summary.revenue, -data.summary.cogs, data.summary.grossProfit, -data.summary.opex, data.summary.netIncome],
+        backgroundColor: [c.accent, c.danger, c.accent2, c.danger, c.accent2],
+      }],
+    },
+    options: { ...baseChartOptions(c), plugins: { legend: { display: false } } },
+  });
+
+  const rows = [
+    ...data.detail.revenue.map((d) => ['Revenue', d.key, d.value]),
+    ...data.detail.cogs.map((d) => ['COGS', d.key, d.value]),
+    ...data.detail.opex.map((d) => ['Operating Expense', d.key, d.value]),
+  ];
+  renderTable('pnl-table', rows);
+}
+
+function renderTable(id, rows) {
+  const tbody = document.querySelector(`#${id} tbody`);
+  tbody.innerHTML = rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td class="${positifNegatif(r[2])}">${rupiah(r[2])}</td></tr>`).join('') ||
+    '<tr><td colspan="3" class="info-lampiran">Tidak ada data.</td></tr>';
+}
+
+// ---- Neraca ----
+async function loadBalance() {
+  const res = await api(`/api/reports/balance?${filterQuery()}`);
+  if (!res.ok) return;
+  const { data } = await res.json();
+  const c = chartColors();
+
+  renderKpiGrid(document.getElementById('balance-kpi'), [
+    { label: 'Total Assets', value: rupiah(data.summary.totalAssets) },
+    { label: 'Total Liabilities', value: rupiah(data.summary.totalLiabilities) },
+    { label: 'Total Equity', value: rupiah(data.summary.totalEquity) },
+    { label: 'Current Ratio', value: data.ratios.currentRatio != null ? fmtNum.format(data.ratios.currentRatio) : '-' },
+  ]);
+
+  const elWarn = document.getElementById('balance-warning');
+  if (!data.summary.balanced) {
+    elWarn.hidden = false;
+    elWarn.textContent = `⚠️ Neraca tidak seimbang. Selisih Assets vs (Liabilities+Equity): ${rupiah(data.summary.diff)}. Periksa klasifikasi CoA di file GL.`;
+  } else {
+    elWarn.hidden = true;
+  }
+
+  makeChart('chart-assets', {
+    type: 'pie',
+    data: { labels: ['Current Assets', 'Fixed Assets'], datasets: [{ data: [data.assets.current, data.assets.fixed], backgroundColor: [c.accent, c.accent2] }] },
+    options: pieChartOptions(c),
+  });
+  makeChart('chart-liab-equity', {
+    type: 'pie',
+    data: {
+      labels: ['Current Liab.', 'LT Liab.', 'Equity'],
+      datasets: [{ data: [data.liabilities.current, data.liabilities.longterm, data.equity.total], backgroundColor: [c.danger, c.palette[4], c.accent2] }],
+    },
+    options: pieChartOptions(c),
+  });
+
+  renderTable('balance-assets-table', [
+    ...data.assets.detail.current.map((d) => ['Current Assets', d.key, d.value]),
+    ...data.assets.detail.fixed.map((d) => ['Fixed Assets', d.key, d.value]),
+  ]);
+  renderTable('balance-liab-table', [
+    ...data.liabilities.detail.current.map((d) => ['Current Liabilities', d.key, d.value]),
+    ...data.liabilities.detail.longterm.map((d) => ['LT Liabilities', d.key, d.value]),
+    ...data.equity.detail.map((d) => ['Equity', d.key, d.value]),
+  ]);
+}
+
+// ---- Cash Flow ----
+async function loadCashflow() {
+  const res = await api(`/api/reports/cashflow?${filterQuery()}`);
+  if (!res.ok) return;
+  const { data } = await res.json();
+  const c = chartColors();
+
+  document.getElementById('cashflow-note').textContent = 'ℹ️ ' + data.note;
+
+  renderKpiGrid(document.getElementById('cashflow-kpi'), [
+    { label: 'Operating Activities', value: rupiah(data.operating), klass: positifNegatif(data.operating) },
+    { label: 'Investing Activities', value: rupiah(data.investing), klass: positifNegatif(data.investing) },
+    { label: 'Financing Activities', value: rupiah(data.financing), klass: positifNegatif(data.financing) },
+    { label: 'Net Change in Cash', value: rupiah(data.netChange), klass: positifNegatif(data.netChange) },
+    { label: 'Beginning Cash (estimasi)', value: rupiah(data.beginningCash) },
+    { label: 'Ending Cash', value: rupiah(data.endingCash) },
+  ]);
+
+  makeChart('chart-cashflow', {
+    type: 'bar',
+    data: {
+      labels: ['Beginning Cash', 'Operating', 'Investing', 'Financing', 'Ending Cash'],
+      datasets: [{
+        data: [data.beginningCash, data.operating, data.investing, data.financing, data.endingCash],
+        backgroundColor: [c.palette[7], c.accent, c.palette[2], c.palette[4], c.accent2],
+      }],
+    },
+    options: { ...baseChartOptions(c), plugins: { legend: { display: false } } },
+  });
+}
+
+// ---- Kinerja Cabang ----
+async function loadBranch() {
+  const res = await api(`/api/reports/branch?${filterQuery()}`);
+  if (!res.ok) return;
+  const { data } = await res.json();
+  const c = chartColors();
+
+  makeChart('chart-branch', {
+    type: 'bar',
+    data: {
+      labels: data.branches.map((b) => b.branch),
+      datasets: [{ label: 'Net Income', data: data.branches.map((b) => b.netIncome), backgroundColor: c.accent }],
+    },
+    options: {
+      ...baseChartOptions(c),
+      plugins: { legend: { display: false } },
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        const branch = data.branches[elements[0].index].branch;
+        openBranchDrilldown(branch);
+      },
+    },
+  });
+
+  const tbody = document.querySelector('#branch-table tbody');
+  tbody.innerHTML = data.branches.map((b) => `
+    <tr class="baris-klik" data-branch="${b.branch}">
+      <td>${b.branch}</td>
+      <td>${rupiah(b.revenue)}</td>
+      <td>${rupiah(b.expense)}</td>
+      <td class="${positifNegatif(b.netIncome)}">${rupiah(b.netIncome)}</td>
+      <td class="${positifNegatif(b.margin)}">${fmtNum.format(b.margin)}%</td>
+    </tr>`).join('');
+  tbody.querySelectorAll('tr').forEach((tr) => tr.addEventListener('click', () => openBranchDrilldown(tr.dataset.branch)));
+}
+
+// ---- Drill-down modal ----
+const elDrillOverlay = document.getElementById('drilldown-overlay');
+document.getElementById('drilldown-close').addEventListener('click', () => (elDrillOverlay.hidden = true));
+
+async function openBranchDrilldown(branch) {
+  const p = new URLSearchParams(filterQuery());
+  p.set('branch', branch);
+  const res = await api(`/api/reports/pnl?${p.toString()}`);
+  if (!res.ok) return;
+  const { data } = await res.json();
+
+  document.getElementById('drilldown-title').textContent = `Detail Cabang: ${branch}`;
+  document.getElementById('drilldown-breadcrumb').innerHTML =
+    `<span>Kinerja Cabang</span> › <strong>${branch}</strong> (Revenue ${rupiah(data.summary.revenue)}, Net Income ${rupiah(data.summary.netIncome)})`;
+
+  const rows = [
+    ...data.detail.revenue.map((d) => ['Revenue: ' + d.key, d.value]),
+    ...data.detail.cogs.map((d) => ['COGS: ' + d.key, d.value]),
+    ...data.detail.opex.map((d) => ['OpEx: ' + d.key, d.value]),
+  ];
+  const tbody = document.querySelector('#drilldown-table tbody');
+  tbody.innerHTML = rows.map((r) => `<tr><td>${r[0]}</td><td class="${positifNegatif(r[1])}">${rupiah(r[1])}</td></tr>`).join('') ||
+    '<tr><td colspan="2" class="info-lampiran">Tidak ada data.</td></tr>';
+
+  elDrillOverlay.hidden = false;
+}
+
+// ---- Export ----
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-export]');
+  if (!btn) return;
+  const type = btn.dataset.export;
+  btn.disabled = true;
+  const teksAsli = btn.textContent;
+  btn.textContent = 'Membuat file...';
+  try {
+    const res = await api(`/api/export/${type}?${filterQuery()}`);
+    if (!res.ok) throw new Error('export gagal');
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : `${type}.xlsx`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Gagal export ke Excel. Coba lagi.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = teksAsli;
+  }
+});
+
+// ---- Upload GL ----
+const elDropzone = document.getElementById('dropzone');
+const elInputGlFile = document.getElementById('input-gl-file');
+const elTombolPilihGl = document.getElementById('tombol-pilih-gl');
+const elDropzoneFilename = document.getElementById('dropzone-filename');
+const elTombolUploadSubmit = document.getElementById('tombol-upload-submit');
+const elUploadMessage = document.getElementById('upload-message');
+const elUploadProgress = document.getElementById('upload-progress');
+let pendingGlFile = null;
+
+elTombolPilihGl.addEventListener('click', () => elInputGlFile.click());
+elInputGlFile.addEventListener('change', () => setPendingFile(elInputGlFile.files[0]));
+
+['dragover', 'dragleave', 'drop'].forEach((evt) => {
+  elDropzone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    elDropzone.classList.toggle('dropzone-aktif', evt === 'dragover');
+  });
+});
+elDropzone.addEventListener('drop', (e) => {
+  const file = e.dataTransfer.files[0];
+  if (file) setPendingFile(file);
+});
+
+function setPendingFile(file) {
+  if (!file) return;
+  if (!/\.xlsx$/i.test(file.name)) {
+    elUploadMessage.textContent = 'File harus berformat .xlsx.';
+    elUploadMessage.hidden = false;
+    return;
+  }
+  pendingGlFile = file;
+  elUploadMessage.hidden = true;
+  elDropzoneFilename.textContent = `📄 ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
+  elTombolUploadSubmit.disabled = false;
+}
+
+elTombolUploadSubmit.addEventListener('click', async () => {
+  if (!pendingGlFile) return;
+  elTombolUploadSubmit.disabled = true;
+  elUploadMessage.hidden = true;
+  elUploadProgress.hidden = false;
+
+  const formData = new FormData();
+  formData.append('file', pendingGlFile);
+  const periodLabel = document.getElementById('input-period-label').value.trim();
+  if (periodLabel) formData.append('periodLabel', periodLabel);
+
+  try {
+    const res = await api('/api/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) {
+      elUploadMessage.textContent = data.error || 'Gagal memproses file.';
+      elUploadMessage.hidden = false;
+      return;
+    }
+    elUploadMessage.className = 'pesan-sukses';
+    elUploadMessage.textContent = `✅ Berhasil! ${data.meta.rowCount} baris transaksi diproses, periode: ${data.meta.periodLabel}.`;
+    elUploadMessage.hidden = false;
+    pendingGlFile = null;
+    elDropzoneFilename.textContent = '';
+    elTombolUploadSubmit.disabled = true;
+    await loadMeta();
+    loadActiveTab();
+  } catch (err) {
+    elUploadMessage.className = 'pesan-error';
+    elUploadMessage.textContent = 'Tidak bisa terhubung ke server.';
+    elUploadMessage.hidden = false;
+  } finally {
+    elUploadProgress.hidden = true;
+    elTombolUploadSubmit.disabled = !pendingGlFile;
+  }
+});
+
 function waktuRelatif(iso) {
-  if (!iso) return 'belum pernah diubah';
+  if (!iso) return '-';
   const detik = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (detik < 60) return 'baru saja';
   const menit = Math.floor(detik / 60);
-  if (menit < 60) return `diubah ${menit} menit lalu`;
+  if (menit < 60) return `${menit} menit lalu`;
   const jam = Math.floor(menit / 60);
-  if (jam < 24) return `diubah ${jam} jam lalu`;
-  const hari = Math.floor(jam / 24);
-  return `diubah ${hari} hari lalu`;
+  if (jam < 24) return `${jam} jam lalu`;
+  return `${Math.floor(jam / 24)} hari lalu`;
 }
 
-async function ambilData() {
-  const res = await fetch('/api/team');
-  if (!res.ok) throw new Error('gagal mengambil data');
-  return res.json();
-}
-
-function tampilkanPilihNama(anggota) {
-  elDaftarNama.innerHTML = '';
-  anggota.forEach((a) => {
-    const tombol = document.createElement('button');
-    tombol.className = 'tombol-nama';
-    tombol.textContent = a.name;
-    tombol.addEventListener('click', () => {
-      localStorage.setItem(STORAGE_KEY, a.name);
-      render();
-    });
-    elDaftarNama.appendChild(tombol);
-  });
-  elPilihNama.hidden = false;
-  elPapan.hidden = true;
-}
-
-function buatKartu(anggota, milikSaya) {
-  const kartu = document.createElement('div');
-  kartu.className = 'kartu' + (milikSaya ? ' kartu-saya' : '');
-
-  const baris = document.createElement('div');
-  baris.className = 'kartu-baris-atas';
-
-  const nama = document.createElement('p');
-  nama.className = 'kartu-nama';
-  nama.textContent = anggota.name;
-
-  const lencana = document.createElement('span');
-  lencana.className = 'lencana-status ' + STATUS_KELAS[anggota.status];
-  lencana.textContent = anggota.status;
-
-  baris.appendChild(nama);
-  baris.appendChild(lencana);
-
-  const tugas = document.createElement('p');
-  tugas.className = 'kartu-tugas' + (anggota.task ? '' : ' kosong');
-  tugas.textContent = anggota.task || 'Belum ada tugas';
-
-  kartu.appendChild(baris);
-  kartu.appendChild(tugas);
-
-  if (anggota.description) {
-    const deskripsi = document.createElement('p');
-    deskripsi.className = 'kartu-deskripsi';
-    deskripsi.textContent = anggota.description.length > 80
-      ? anggota.description.slice(0, 80) + '…'
-      : anggota.description;
-    kartu.appendChild(deskripsi);
+function renderGlCurrentInfo(meta) {
+  const el = document.getElementById('gl-current-info');
+  if (!meta) {
+    el.innerHTML = '<p class="info-lampiran">Belum ada data GL yang diunggah.</p>';
+    return;
   }
-
-  if (anggota.attachment) {
-    const lampiran = document.createElement('a');
-    lampiran.className = 'kartu-lampiran';
-    lampiran.href = anggota.attachment.url;
-    lampiran.target = '_blank';
-    lampiran.rel = 'noopener';
-    lampiran.textContent = '📎 ' + anggota.attachment.name;
-    kartu.appendChild(lampiran);
-  }
-
-  const waktu = document.createElement('p');
-  waktu.className = 'kartu-waktu';
-  waktu.textContent = waktuRelatif(anggota.updatedAt);
-  kartu.appendChild(waktu);
-
-  if (milikSaya) {
-    const tombolUbah = document.createElement('button');
-    tombolUbah.className = 'tombol-ubah';
-    tombolUbah.textContent = 'Ubah Status Kamu';
-    tombolUbah.addEventListener('click', () => bukaEditor(anggota));
-    kartu.appendChild(tombolUbah);
-  }
-
-  return kartu;
+  el.innerHTML = `
+    <p><strong>File:</strong> ${meta.filename}</p>
+    <p><strong>Periode:</strong> ${meta.periodLabel}</p>
+    <p><strong>Jumlah baris:</strong> ${meta.rowCount}</p>
+    <p><strong>Cabang terdeteksi:</strong> ${meta.branches.join(', ')}</p>
+    <p><strong>Diunggah:</strong> ${waktuRelatif(meta.uploadedAt)}</p>
+  `;
 }
 
-function tampilkanPapan(anggota) {
-  const saya = namaSaya();
-  elNamaSayaLabel.textContent = saya;
-
-  elDaftarKartu.innerHTML = '';
-  anggota.forEach((a) => {
-    elDaftarKartu.appendChild(buatKartu(a, a.name === saya));
-  });
-
-  elPilihNama.hidden = true;
-  elPapan.hidden = false;
-}
-
-async function render() {
-  let anggota;
+// ---- Load meta & bootstrap ----
+async function loadMeta() {
   try {
-    anggota = await ambilData();
-  } catch (e) {
-    return;
-  }
-
-  if (editorTerbuka) return;
-
-  const saya = namaSaya();
-  const namaValid = saya && anggota.some((a) => a.name === saya);
-
-  if (!namaValid) {
-    localStorage.removeItem(STORAGE_KEY);
-    tampilkanPilihNama(anggota);
-  } else {
-    tampilkanPapan(anggota);
-  }
-}
-
-elTombolGantiNama.addEventListener('click', () => {
-  localStorage.removeItem(STORAGE_KEY);
-  render();
-});
-
-function perbaruiTampilanLampiran() {
-  if (filePending) {
-    elNamaLampiran.textContent = filePending.name;
-    elLinkLampiran.hidden = true;
-    elTombolHapusLampiran.hidden = false;
-  } else if (hapusLampiranFlag || !lampiranTersimpan) {
-    elNamaLampiran.textContent = 'Tidak ada lampiran';
-    elLinkLampiran.hidden = true;
-    elTombolHapusLampiran.hidden = true;
-  } else {
-    elNamaLampiran.textContent = lampiranTersimpan.name;
-    elLinkLampiran.href = lampiranTersimpan.url;
-    elLinkLampiran.hidden = false;
-    elTombolHapusLampiran.hidden = false;
-  }
-}
-
-function bukaEditor(anggota) {
-  editorTerbuka = true;
-  namaSedangDiedit = anggota.name;
-  statusTerpilih = anggota.status;
-  elInputTugas.value = anggota.task || '';
-  elSisaKarakter.textContent = 60 - elInputTugas.value.length;
-  elInputDeskripsi.value = anggota.description || '';
-  elSisaKarakterDeskripsi.textContent = DESCRIPTION_MAX_LENGTH - elInputDeskripsi.value.length;
-  elPesanError.hidden = true;
-
-  lampiranTersimpan = anggota.attachment || null;
-  filePending = null;
-  hapusLampiranFlag = false;
-  elInputFile.value = '';
-  perbaruiTampilanLampiran();
-
-  Array.from(elPilihanStatus.children).forEach((tombol) => {
-    tombol.classList.toggle('aktif', tombol.dataset.status === statusTerpilih);
-  });
-
-  elOverlay.hidden = false;
-}
-
-function tutupEditor() {
-  editorTerbuka = false;
-  namaSedangDiedit = null;
-  lampiranTersimpan = null;
-  filePending = null;
-  hapusLampiranFlag = false;
-  elOverlay.hidden = true;
-}
-
-Array.from(elPilihanStatus.children).forEach((tombol) => {
-  tombol.addEventListener('click', () => {
-    statusTerpilih = tombol.dataset.status;
-    Array.from(elPilihanStatus.children).forEach((t) => {
-      t.classList.toggle('aktif', t === tombol);
-    });
-  });
-});
-
-elInputTugas.addEventListener('input', () => {
-  elSisaKarakter.textContent = 60 - elInputTugas.value.length;
-});
-
-elInputDeskripsi.addEventListener('input', () => {
-  elSisaKarakterDeskripsi.textContent = DESCRIPTION_MAX_LENGTH - elInputDeskripsi.value.length;
-});
-
-elTombolPilihFile.addEventListener('click', () => {
-  elInputFile.click();
-});
-
-elInputFile.addEventListener('change', () => {
-  const file = elInputFile.files[0];
-  if (!file) return;
-
-  if (file.size > MAX_ATTACHMENT_SIZE) {
-    elPesanError.textContent = `Ukuran lampiran maksimal ${MAX_ATTACHMENT_SIZE / (1024 * 1024)}MB.`;
-    elPesanError.hidden = false;
-    elInputFile.value = '';
-    return;
-  }
-
-  elPesanError.hidden = true;
-  filePending = file;
-  hapusLampiranFlag = false;
-  perbaruiTampilanLampiran();
-});
-
-elTombolHapusLampiran.addEventListener('click', () => {
-  filePending = null;
-  hapusLampiranFlag = true;
-  elInputFile.value = '';
-  perbaruiTampilanLampiran();
-});
-
-elTombolBatal.addEventListener('click', () => {
-  tutupEditor();
-  render();
-});
-
-elTombolSimpan.addEventListener('click', async () => {
-  elPesanError.hidden = true;
-
-  if (!namaSedangDiedit) {
-    elPesanError.textContent = 'Nama kamu belum diketahui. Tutup ini lalu pilih nama dulu.';
-    elPesanError.hidden = false;
-    return;
-  }
-
-  elTombolSimpan.disabled = true;
-
-  try {
-    const formData = new FormData();
-    formData.append('name', namaSedangDiedit);
-    formData.append('status', statusTerpilih);
-    formData.append('task', elInputTugas.value);
-    formData.append('description', elInputDeskripsi.value);
-    if (filePending) {
-      formData.append('attachment', filePending);
-    } else if (hapusLampiranFlag) {
-      formData.append('removeAttachment', 'true');
-    }
-
-    const res = await fetch('/api/status', {
-      method: 'POST',
-      body: formData,
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      elPesanError.textContent = data.error || 'Gagal menyimpan. Coba lagi.';
-      elPesanError.hidden = false;
+    const res = await api('/api/gl/meta');
+    if (res.status === 404) {
+      currentMeta = null;
+      showNoData(true);
+      renderGlCurrentInfo(null);
+      populateFilters({ periods: [], branches: [], departments: [] });
       return;
     }
+    if (!res.ok) return;
+    const { meta } = await res.json();
+    currentMeta = meta;
+    showNoData(false);
+    renderGlCurrentInfo(meta);
+    populateFilters(meta);
+  } catch (e) { /* ditangani di api() */ }
+}
 
-    tutupEditor();
-    tampilkanPapan(data);
-  } catch (e) {
-    elPesanError.textContent = 'Tidak bisa terhubung ke server. Coba lagi.';
-    elPesanError.hidden = false;
-  } finally {
-    elTombolSimpan.disabled = false;
+async function loadActiveTab() {
+  if (!currentMeta && state.tab !== 'upload') return;
+  const loaders = { overview: loadOverview, pnl: loadPnL, balance: loadBalance, cashflow: loadCashflow, branch: loadBranch };
+  const loader = loaders[state.tab];
+  if (loader) {
+    try {
+      await loader();
+    } catch (e) {
+      if (e.message !== 'no-session' && e.message !== 'unauthorized') console.error(`Gagal memuat tab "${state.tab}":`, e);
+    }
   }
-});
+}
 
-render();
-setInterval(render, REFRESH_MS);
+async function init() {
+  Array.from(elTabNav.children).forEach((b) => b.classList.toggle('aktif', b.dataset.tab === state.tab));
+  document.querySelectorAll('.tab-panel').forEach((el) => (el.hidden = el.id !== `tab-${state.tab}`));
+  document.getElementById('filter-bar').hidden = state.tab === 'upload';
+  await loadMeta();
+  await loadActiveTab();
+}
+
+if (getToken()) {
+  showApp();
+} else {
+  showLogin();
+}
+
+setInterval(() => {
+  if (getToken() && !elApp.hidden) loadActiveTab();
+}, REFRESH_MS);

@@ -1,90 +1,118 @@
-# Papan Status Tim
+# Financial Dashboard — PT PNG
 
-Satu layar web sederhana untuk melihat status kerja tim (Belum Mulai / Dikerjakan / Selesai). Dibuat untuk tim kecil (5-10 orang) yang terbiasa pakai HP, tanpa login/akun rumit.
+Dashboard eksekutif keuangan berbasis upload file General Ledger (GL) dari ESB. Upload 1 file Excel, dapatkan otomatis: Ringkasan Eksekutif, Laba Rugi, Neraca, Cash Flow (estimasi), dan Kinerja Cabang — lengkap dengan filter, drill-down, dan export ke Excel.
 
 ## Cara kerja singkat
 
-- Setiap anggota membuka link di HP, memilih namanya sekali (tersimpan di HP itu), lalu bisa mengubah status, tugas singkat, deskripsi, dan lampiran file miliknya sendiri.
-- Semua orang melihat papan yang sama, otomatis ter-update setiap ~8 detik.
-- Tidak ada tambah/hapus anggota dari UI — daftar nama diatur lewat file konfigurasi oleh admin (kamu).
-- Tombol **Export CSV** di halaman utama mengunduh daftar nama, status, dan tugas singkat terkini.
+- Buka link, masukkan password sekali per sesi browser.
+- Buka tab **Upload GL**, unggah file `.xlsx` dari ESB (drag-drop atau pilih file).
+- Sistem otomatis mem-parsing & menghitung semua laporan (< 30 detik untuk file berukuran wajar).
+- Upload file baru akan **menggantikan** data lama (bukan menambah riwayat).
+- Semua laporan bisa difilter per periode/cabang/departemen, dan filter tersimpan di URL (bisa di-share).
 
-## 1. Atur daftar anggota tim
+## 1. Jalankan di komputer (development)
 
-Edit file `data/team.json`, isi dengan nama-nama anggota tim (5-10 nama), contoh:
-
-```json
-[
-  "Sofia",
-  "Budi",
-  "Citra",
-  "Dewi",
-  "Eka"
-]
-```
-
-Simpan file. Tidak perlu langkah lain — aplikasi otomatis membaca file ini setiap kali diakses.
-
-Untuk mengganti nama seseorang di kemudian hari, cukup edit nama di file ini. (Catatan: jika nama diganti, status lama milik nama sebelumnya tidak lagi terhubung — orang tersebut perlu "pilih nama" ulang di HP-nya.)
-
-## 2. Jalankan di komputer (untuk coba-coba / development)
-
-Butuh [Node.js](https://nodejs.org) (versi 18 ke atas).
+Butuh [Node.js](https://nodejs.org) versi 18 ke atas.
 
 ```bash
 npm install
+cp .env.example .env   # lalu isi APP_PASSWORD & APP_SECRET (opsional untuk dev, ada default)
 npm start
 ```
 
-Buka `http://localhost:3000` di browser.
+Buka `http://localhost:3000`, masuk dengan password dari `APP_PASSWORD` (default: `dashboard123`).
 
-## 3. Deploy supaya bisa diakses tim dari HP
+### Coba dengan data contoh
 
-Status kerja sekarang disimpan di **Redis (Vercel Storage → Upstash for Redis)**, bukan file lagi — jadi cocok dipakai di platform serverless seperti Vercel yang filesystem-nya sementara. Kalau environment variable KV belum di-set (mis. waktu jalan di komputer sendiri), aplikasi otomatis jatuh ke penyimpanan file lokal (`data/status.json`) supaya tetap bisa dicoba tanpa setup tambahan.
+Ada file contoh di `sample-data/contoh-GL.xlsx` (7 cabang, 6 bulan transaksi P&L + saldo neraca akhir periode) — unggah file ini di tab **Upload GL** untuk melihat dashboard terisi. File ini juga jadi **acuan format kolom** yang dikenali sistem:
 
-### Deploy ke Vercel (cara yang dipakai sekarang)
+| Kolom yang dikenali (nama boleh variasi) | Wajib? |
+|---|---|
+| Tanggal / Date | Tidak wajib, tapi tanpa ini tren bulanan tidak muncul |
+| CoA No / Account Code / Kode Akun | **Wajib** |
+| CoA Description / Nama Akun | Tidak wajib |
+| Branch / Cabang | **Wajib** |
+| Department / Departemen / Divisi | Tidak wajib |
+| Dr Amount / Debit | Salah satu dari Dr/Cr **atau** Balance wajib ada |
+| Cr Amount / Credit / Kredit | " |
+| Balance / Saldo | " |
 
-1. Hubungkan repo ini ke project Vercel (kalau belum, import dari dashboard Vercel).
-2. Di dashboard project → tab **Storage** → **Create Database** (atau "Browse Marketplace") → pilih **Upstash** produk **Redis** → buat database baru.
-3. Saat proses connect, pastikan database itu di-**Connect** ke project ini untuk environment **Production** (dan **Preview** kalau mau).
-4. Vercel otomatis menambahkan environment variable ke project (biasanya bernama `KV_REST_API_URL` dan `KV_REST_API_TOKEN`). Cek di **Project Settings → Environment Variables** — kalau namanya berbeda dari itu, tidak masalah, aplikasi juga mengenali nama `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`.
-5. Redeploy project (biasanya otomatis terpicu setelah connect storage; kalau tidak, klik **Redeploy** manual dari tab Deployments).
-6. Selesai — coba buka link Vercel-nya, pilih nama, ubah status, harus tersimpan tanpa error 500 lagi.
-
-### Alternatif lain (tanpa Vercel)
-
-Kalau suatu saat pindah dari Vercel, aplikasi ini tetap jalan biasa sebagai server Node.js/Express — tinggal jangan set env var KV supaya otomatis pakai file lokal, dengan syarat platform hosting-nya punya disk permanen (mis. **Railway**/**Render** dengan volume, atau **VPS** + `pm2`).
-
-Setelah live, cukup share satu link ke semua anggota tim (via WhatsApp), dan minta mereka membukanya dari HP masing-masing lalu memilih nama sekali.
-
-## 4. Lampiran file (Vercel Blob)
-
-Lampiran yang diunggah lewat popup "Ubah Status Kamu" disimpan lewat pola yang sama seperti status: **Vercel Blob** di production, file lokal (`data/uploads/`) kalau env var belum ada (mis. waktu development).
-
-1. Di dashboard project Vercel → tab **Storage** → **Create Database** (atau "Browse Marketplace") → pilih **Blob**.
-2. **Connect** ke project ini untuk environment **Production** (dan **Preview** kalau mau).
-3. Vercel otomatis menambahkan environment variable `BLOB_READ_WRITE_TOKEN`.
-4. Redeploy project.
-
-Kalau `BLOB_READ_WRITE_TOKEN` belum di-set di Vercel, upload lampiran tetap "berhasil" secara teknis tapi filenya tersimpan di disk sementara Vercel yang bisa hilang kapan saja — jadi pastikan langkah di atas sudah dilakukan sebelum tim mulai pakai fitur lampiran.
-
-Batas ukuran lampiran: **5MB per file**. Tipe file tidak dibatasi.
-
-## Struktur file
+Kolom **CoA No** harus mengikuti klasifikasi standar (digit pertama menentukan jenis akun):
 
 ```
-server.js             -> server (API + menyajikan halaman web)
-lib/store.js           -> lapisan penyimpanan status: Redis (Vercel KV) kalau tersedia, file lokal kalau tidak
-lib/attachments.js      -> lapisan penyimpanan lampiran: Vercel Blob kalau tersedia, file lokal kalau tidak
-public/                -> halaman web (HTML/CSS/JS polos, tanpa framework)
-data/team.json         -> daftar nama anggota tim (edit manual oleh admin)
-data/status.json       -> fallback penyimpanan status untuk development lokal (dibuat otomatis, jangan diedit manual)
-data/uploads/          -> fallback penyimpanan lampiran untuk development lokal (dibuat otomatis, jangan diedit manual)
+1xxx = Asset      (11xx Current Asset, 12xx Fixed Asset)
+2xxx = Liability  (21xx Current Liability, 22xx Long-term Liability)
+3xxx = Equity
+4xxx = Revenue
+5xxx = COGS (Cost of Goods Sold)
+6xxx = Operating Expense
 ```
 
-## Batasan versi pertama (sengaja disederhanakan)
+Untuk regenerate/ubah file contoh: `node scripts/generate-sample-gl.js`.
 
-- Tidak ada login/password — siapa pun yang tahu link bisa memilih nama siapa saja. Cocok untuk tim kecil yang saling percaya (mirip grup WhatsApp).
-- Tidak ada riwayat/histori status, hanya status terakhir yang ditampilkan (termasuk deskripsi & lampiran — ganti status akan menimpa yang lama).
-- Tambah/hapus anggota hanya lewat edit file `data/team.json`, tidak ada tombol di UI.
-- Satu lampiran per anggota (mengunggah file baru otomatis mengganti file lama).
+## 2. Deploy ke Vercel (production)
+
+1. Push repo ini ke GitHub, import project ke Vercel.
+2. **Storage → Create Database → Upstash Redis**, connect ke project (Production + Preview). Vercel otomatis menambahkan `KV_REST_API_URL` & `KV_REST_API_TOKEN`.
+3. **Storage → Create Database → Blob**, connect ke project. Vercel otomatis menambahkan `BLOB_READ_WRITE_TOKEN`.
+4. Di **Project Settings → Environment Variables**, tambahkan:
+   - `APP_PASSWORD` — password akses dashboard (bagikan ke 3 executive)
+   - `APP_SECRET` — string acak panjang (untuk tanda tangan sesi login)
+5. Redeploy. Buka link Vercel, login, lalu upload GL file pertama.
+
+Kalau env var Redis/Blob belum di-set, aplikasi otomatis jatuh ke penyimpanan file lokal — jalan tanpa error, tapi **tidak cocok untuk Vercel production** karena filesystem-nya sementara (data GL akan hilang saat cold start baru). Pastikan langkah 2-3 sudah dilakukan sebelum tim mulai pakai.
+
+## 3. Struktur file
+
+```
+server.js                 -> server Express (semua endpoint API + menyajikan halaman web)
+lib/store.js               -> penyimpanan dataset GL: Redis (Vercel KV) kalau tersedia, file lokal kalau tidak
+lib/attachments.js          -> penyimpanan arsip file GL asli: Vercel Blob kalau tersedia, file lokal kalau tidak
+lib/excel-parser.js         -> parsing file GL Excel -> baris transaksi terklasifikasi
+lib/calculations.js         -> semua logika hitung: Overview, P&L, Neraca, Cash Flow, Kinerja Cabang
+lib/excel-export.js         -> generate file Excel export per laporan
+lib/auth.js                 -> password protection sederhana (token sesi ber-HMAC)
+public/                     -> halaman web (HTML/CSS/JS polos, tanpa build step)
+public/vendor/               -> Chart.js di-vendor (bukan CDN) supaya dashboard tetap jalan di jaringan kantor yang membatasi akses CDN eksternal. Update: npm i chart.js lalu copy node_modules/chart.js/dist/chart.umd.js ke sini.
+sample-data/contoh-GL.xlsx  -> file GL contoh untuk testing
+scripts/generate-sample-gl.js -> generator file contoh di atas
+data/gl-data.json           -> fallback penyimpanan GL untuk development lokal (dibuat otomatis)
+data/uploads/                -> fallback penyimpanan arsip file GL untuk development lokal (dibuat otomatis)
+```
+
+## 4. Fitur yang tersedia (Phase 1 MVP)
+
+- ✅ Upload & parsing GL Excel (auto-deteksi kolom, validasi, replace file lama)
+- ✅ Dashboard Overview (KPI cards, tren bulanan, breakdown expense)
+- ✅ Laporan Laba Rugi (ringkasan + rincian akun + waterfall chart)
+- ✅ Neraca (Assets vs Liabilities+Equity, validasi balance, rasio keuangan)
+- ✅ Cash Flow — **lihat catatan di bawah**
+- ✅ Kinerja Cabang (perbandingan 7 cabang, drill-down per cabang)
+- ✅ Export tiap laporan ke Excel (format currency, header bold)
+- ✅ Password protection (sesi per browser, token HMAC 12 jam)
+- ✅ Filter periode/cabang/departemen (tersimpan di URL, bisa di-share)
+- ✅ Mobile responsive (mobile-first, tab & filter scrollable, chart resize otomatis)
+
+### Catatan penting: Cash Flow adalah estimasi
+
+Cash Flow yang akurat butuh perbandingan neraca **awal vs akhir periode**. Karena aplikasi ini hanya menyimpan **1 file GL snapshot** (sesuai spec: upload baru menggantikan yang lama), laporan Cash Flow di sini adalah **estimasi berbasis klasifikasi akun**:
+
+- Operating ≈ Net Income dari P&L
+- Investing ≈ pergerakan akun Fixed Asset (12xx)
+- Financing ≈ akun Long-term Liability (22xx) + Equity (3xxx)
+
+Ini cukup untuk gambaran kasar, tapi **bukan** cash flow method langsung/tidak langsung yang presisi. Peringatan ini juga tampil di UI & file export.
+
+## 5. Batasan versi pertama (sengaja disederhanakan)
+
+- Password tunggal (bukan multi-user login) — cocok untuk tim kecil yang saling percaya, bagikan lewat link privat.
+- Hanya 1 dataset GL aktif — upload baru menimpa yang lama (tidak ada riwayat multi-periode antar file).
+- Tren bulanan & filter periode hanya berfungsi kalau file GL punya kolom tanggal per baris transaksi.
+- Cash Flow adalah estimasi (lihat di atas), bukan hasil rekonsiliasi neraca 2 periode.
+
+## Phase 2 (rencana pengembangan lanjutan)
+
+- Cash Flow presisi (upload neraca awal & akhir periode terpisah)
+- Perbandingan YoY / periode sebelumnya
+- Budget vs Actual
+- Multi-user login dengan role

@@ -1,137 +1,166 @@
 const express = require('express');
 const multer = require('multer');
-const fs = require('fs');
 const path = require('path');
+
 const store = require('./lib/store');
 const attachments = require('./lib/attachments');
+const auth = require('./lib/auth');
+const { parseGLBuffer, GLParseError } = require('./lib/excel-parser');
+const calc = require('./lib/calculations');
+const { buildReportWorkbookBuffer } = require('./lib/excel-export');
 
 const PORT = process.env.PORT || 3000;
-const TEAM_FILE = path.join(__dirname, 'data', 'team.json');
-const VALID_STATUSES = ['Belum Mulai', 'Dikerjakan', 'Selesai'];
-const TASK_MAX_LENGTH = 60;
-const DESCRIPTION_MAX_LENGTH = 500;
-const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_ATTACHMENT_SIZE },
+  limits: { fileSize: MAX_UPLOAD_SIZE },
 });
 
 function handleUpload(req, res, next) {
-  upload.single('attachment')(req, res, (err) => {
+  upload.single('file')(req, res, (err) => {
     if (!err) return next();
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: `Ukuran lampiran maksimal ${MAX_ATTACHMENT_SIZE / (1024 * 1024)}MB.` });
+      return res.status(400).json({ error: `Ukuran file maksimal ${MAX_UPLOAD_SIZE / (1024 * 1024)}MB.` });
     }
-    return res.status(400).json({ error: 'Gagal mengunggah lampiran.' });
+    return res.status(400).json({ error: 'Gagal mengunggah file.' });
   });
 }
 
-function readTeam() {
-  const raw = fs.readFileSync(TEAM_FILE, 'utf8');
-  const names = JSON.parse(raw);
-  if (!Array.isArray(names)) throw new Error('data/team.json harus berupa daftar (array) nama');
-  return names;
-}
-
-async function getBoard() {
-  const team = readTeam();
-  const statuses = await store.getAllStatuses(team);
-  return team.map((name) => {
-    const entry = statuses[name];
-    return {
-      name,
-      status: entry ? entry.status : 'Belum Mulai',
-      task: entry ? entry.task : '',
-      description: entry ? entry.description || '' : '',
-      attachment: entry ? entry.attachment || null : null,
-      updatedAt: entry ? entry.updatedAt : null,
-    };
-  });
-}
-
-function csvEscape(value) {
-  const str = String(value ?? '');
-  if (/[",\r\n]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
+const REPORT_BUILDERS = {
+  overview: (rows, q) => calc.computeOverview(rows, q),
+  pnl: (rows, q) => calc.computePnL(rows, q),
+  balance: (rows, q) => calc.computeBalanceSheet(rows, q),
+  cashflow: (rows, q) => calc.computeCashFlow(rows, q),
+  branch: (rows, q) => calc.computeBranchPerformance(rows, q),
+};
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(attachments.UPLOAD_DIR));
 
-app.get('/api/team', async (req, res) => {
+// ---- Auth ----
+app.post('/api/auth/login', (req, res) => {
+  const { password } = req.body || {};
+  if (!auth.checkPassword(password)) {
+    return res.status(401).json({ error: 'Password salah.' });
+  }
+  const { token, expiresAt } = auth.createToken();
+  res.json({ token, expiresAt });
+});
+
+// Semua route /api/* di bawah ini butuh sesi valid.
+app.use('/api', (req, res, next) => {
+  if (req.path === '/auth/login' || req.path === '/health') return next();
+  return auth.requireAuth(req, res, next);
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true }));
+
+// ---- FEATURE 1: Upload & Processing ----
+app.post('/api/upload', handleUpload, async (req, res) => {
   try {
-    res.json(await getBoard());
+    if (!req.file) {
+      return res.status(400).json({ error: 'File GL (.xlsx) wajib diunggah.' });
+    }
+    const originalName = req.file.originalname || '';
+    if (!/\.xlsx$/i.test(originalName)) {
+      return res.status(400).json({ error: 'File harus berformat .xlsx.' });
+    }
+
+    let parsed;
+    try {
+      parsed = await parseGLBuffer(req.file.buffer, { periodLabel: req.body && req.body.periodLabel });
+    } catch (err) {
+      if (err instanceof GLParseError) {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
+
+    // Ganti file lama (jika ada) dengan yang baru — simpan file asli sebagai arsip.
+    const previous = await store.getGL();
+    let sourceAttachment = null;
+    try {
+      sourceAttachment = await attachments.saveAttachment(req.file);
+      if (previous && previous.sourceAttachment) {
+        await attachments.deleteAttachment(previous.sourceAttachment);
+      }
+    } catch (err) {
+      // Kalau penyimpanan arsip file asli gagal, tetap lanjut — data hasil parse tetap valid.
+      console.error('Gagal menyimpan arsip file GL asli:', err.message);
+    }
+
+    const glData = {
+      meta: { ...parsed.meta, uploadedAt: new Date().toISOString(), filename: originalName },
+      rows: parsed.rows,
+      sourceAttachment,
+    };
+    await store.setGL(glData);
+
+    res.json({ success: true, meta: glData.meta });
   } catch (err) {
-    res.status(500).json({ error: 'Gagal membaca data tim.' });
+    console.error(err);
+    res.status(500).json({ error: 'Gagal memproses file GL.' });
   }
 });
 
-app.get('/api/export.csv', async (req, res) => {
+app.get('/api/gl/meta', async (req, res) => {
   try {
-    const board = await getBoard();
-    const header = ['Nama', 'Status', 'Tugas Singkat'];
-    const rows = board.map((a) => [a.name, a.status, a.task]);
-    const csv = [header, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
-
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="papan-status-tim.csv"');
-    res.send('﻿' + csv); // BOM supaya Excel membaca UTF-8 dengan benar
+    const gl = await store.getGL();
+    if (!gl) return res.status(404).json({ error: 'Belum ada data GL yang diunggah.' });
+    res.json({ meta: gl.meta });
   } catch (err) {
-    res.status(500).json({ error: 'Gagal membuat file CSV.' });
+    res.status(500).json({ error: 'Gagal membaca data GL.' });
   }
 });
 
-app.post('/api/status', handleUpload, async (req, res) => {
+// ---- FEATURE 2-6: Reports ----
+app.get('/api/reports/:type', async (req, res) => {
   try {
-    const { name, status, task, description, removeAttachment } = req.body || {};
-    const team = readTeam();
+    const builder = REPORT_BUILDERS[req.params.type];
+    if (!builder) return res.status(404).json({ error: 'Tipe laporan tidak dikenal.' });
 
-    if (typeof name !== 'string' || !team.includes(name)) {
-      return res.status(400).json({ error: 'Nama tidak dikenali.' });
-    }
-    if (!VALID_STATUSES.includes(status)) {
-      return res.status(400).json({ error: 'Status tidak valid.' });
-    }
-    const trimmedTask = typeof task === 'string' ? task.trim() : '';
-    if (trimmedTask.length > TASK_MAX_LENGTH) {
-      return res.status(400).json({ error: `Nama tugas maksimal ${TASK_MAX_LENGTH} karakter.` });
-    }
-    const trimmedDescription = typeof description === 'string' ? description.trim() : '';
-    if (trimmedDescription.length > DESCRIPTION_MAX_LENGTH) {
-      return res.status(400).json({ error: `Deskripsi maksimal ${DESCRIPTION_MAX_LENGTH} karakter.` });
-    }
+    const gl = await store.getGL();
+    if (!gl) return res.status(404).json({ error: 'Belum ada data GL yang diunggah.' });
 
-    const existing = (await store.getAllStatuses(team))[name];
-    let attachment = existing ? existing.attachment || null : null;
-
-    if (req.file) {
-      const lampiranLama = attachment;
-      attachment = await attachments.saveAttachment(req.file);
-      if (lampiranLama) await attachments.deleteAttachment(lampiranLama);
-    } else if (removeAttachment === 'true' && attachment) {
-      await attachments.deleteAttachment(attachment);
-      attachment = null;
-    }
-
-    await store.setStatus(name, {
-      status,
-      task: trimmedTask,
-      description: trimmedDescription,
-      attachment,
-      updatedAt: new Date().toISOString(),
-    });
-
-    res.json(await getBoard());
+    const { period, branch, dept } = req.query;
+    const data = builder(gl.rows, { period, branch, department: dept });
+    res.json({ meta: gl.meta, data });
   } catch (err) {
-    res.status(500).json({ error: 'Gagal menyimpan status.' });
+    console.error(err);
+    res.status(500).json({ error: 'Gagal menghitung laporan.' });
+  }
+});
+
+// ---- FEATURE 7: Export to Excel ----
+app.get('/api/export/:type', async (req, res) => {
+  try {
+    const builder = REPORT_BUILDERS[req.params.type];
+    if (!builder) return res.status(404).json({ error: 'Tipe laporan tidak dikenal.' });
+
+    const gl = await store.getGL();
+    if (!gl) return res.status(404).json({ error: 'Belum ada data GL yang diunggah.' });
+
+    const { period, branch, dept } = req.query;
+    const data = builder(gl.rows, { period, branch, department: dept });
+    const buffer = await buildReportWorkbookBuffer(req.params.type, data, gl.meta);
+
+    const periodPart = (period && period !== 'ALL' ? period : gl.meta.periodLabel || 'YTD').replace(/[^a-zA-Z0-9-]/g, '_');
+    const filename = `${req.params.type}_${periodPart}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Gagal membuat file Excel.' });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Papan Status Tim jalan di http://localhost:${PORT} (status: ${store.useKv ? 'Redis' : 'file lokal'}, lampiran: ${attachments.useBlob ? 'Vercel Blob' : 'file lokal'})`);
+  console.log(
+    `Financial Dashboard jalan di http://localhost:${PORT} (data: ${store.useKv ? 'Redis' : 'file lokal'}, file: ${attachments.useBlob ? 'Vercel Blob' : 'file lokal'})`
+  );
 });

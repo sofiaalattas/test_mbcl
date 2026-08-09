@@ -1,4 +1,5 @@
 node_modules/
-data/status.json
-data/status.json.tmp
+data/gl-data.json
+data/gl-data.json.tmp
 data/uploads/
+.env
