@@ -790,6 +790,7 @@ async function loadMeta() {
       showNoData(true);
       renderGlCurrentInfo(null);
       populateFilters({ periods: [], branches: [], departments: [] });
+      elTombolExportSemua.hidden = true;
       return;
     }
     if (!res.ok) return;
@@ -798,8 +799,39 @@ async function loadMeta() {
     showNoData(false);
     renderGlCurrentInfo(meta);
     populateFilters(meta);
+    elTombolExportSemua.hidden = false;
   } catch (e) { /* ditangani di api() */ }
 }
+
+// ---- Export Semua Laporan (1 file Excel, 5 sheet: Laba Rugi, Neraca, Cash
+// Flow, Kinerja Cabang, GL Data Mentah) — ikut filter periode/cabang/dept aktif ----
+const elTombolExportSemua = document.getElementById('tombol-export-semua');
+elTombolExportSemua.addEventListener('click', async () => {
+  elTombolExportSemua.disabled = true;
+  const teksAsli = elTombolExportSemua.textContent;
+  elTombolExportSemua.textContent = 'Membuat file...';
+  try {
+    const res = await api(`/api/export/all?${filterQuery()}`);
+    if (!res.ok) throw new Error('export gagal');
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : 'Laporan_Keuangan_Lengkap.xlsx';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Gagal export laporan ke Excel. Coba lagi.');
+  } finally {
+    elTombolExportSemua.disabled = false;
+    elTombolExportSemua.textContent = teksAsli;
+  }
+});
 
 async function loadActiveTab() {
   if (!currentMeta && state.tab !== 'upload') return;

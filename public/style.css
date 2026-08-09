@@ -505,6 +505,12 @@ td.nilai-positif, td.nilai-negatif { font-variant-numeric: tabular-nums; font-we
 @media (max-width: 640px) {
   .layar-dashboard { padding: var(--sp-4) var(--sp-3) var(--sp-8) var(--sp-3); }
   .app-bar-judul { font-size: 13px; }
+  /* Tombol Export Semua Laporan diciutkan jadi ikon saja di mobile — teksnya
+     panjang dan kalau dipaksa tampil penuh, judul aplikasi di sebelahnya jadi
+     tergencet sampai hilang (app-bar-judul punya min-width:0 supaya aman dari
+     overflow, tapi itu berarti dia yang paling dulu mengalah soal ruang). */
+  .teks-export-semua { display: none; }
+  #tombol-export-semua { padding: 7px 10px; }
   .filter-bar { position: static; padding: var(--sp-3); }
   .filter-field { max-width: none; min-width: 0; flex: 1 1 45%; }
   .kpi-grid { grid-template-columns: 1fr; gap: var(--sp-3); }

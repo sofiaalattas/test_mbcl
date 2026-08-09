@@ -7,7 +7,7 @@ const attachments = require('./lib/attachments');
 const auth = require('./lib/auth');
 const { parseGLBuffer, GLParseError } = require('./lib/excel-parser');
 const calc = require('./lib/calculations');
-const { buildReportWorkbookBuffer } = require('./lib/excel-export');
+const { buildReportWorkbookBuffer, buildCombinedWorkbookBuffer } = require('./lib/excel-export');
 
 const PORT = process.env.PORT || 3000;
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB
@@ -131,6 +131,39 @@ app.get('/api/reports/:type', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Gagal menghitung laporan.' });
+  }
+});
+
+// ---- FEATURE 7: Export to Excel (semua laporan sekaligus, 1 file 5 sheet) ----
+// Didaftarkan SEBELUM /api/export/:type supaya path literal "/all" tidak
+// ketangkap sebagai parameter :type oleh route generik di bawahnya.
+app.get('/api/export/all', async (req, res) => {
+  try {
+    const gl = await store.getGL();
+    if (!gl) return res.status(404).json({ error: 'Belum ada data GL yang diunggah.' });
+
+    const { period, branch, dept, dateFrom, dateTo } = req.query;
+    const filters = { period, branch, department: dept, dateFrom, dateTo };
+    const buffer = await buildCombinedWorkbookBuffer(
+      {
+        pnl: calc.computePnL(gl.rows, filters),
+        balance: calc.computeBalanceSheet(gl.rows, filters),
+        cashflow: calc.computeCashFlow(gl.rows, filters),
+        branch: calc.computeBranchPerformance(gl.rows, filters),
+        glRows: gl.rows,
+      },
+      gl.meta
+    );
+
+    const periodPart = (period && period !== 'ALL' ? period : gl.meta.periodLabel || 'YTD').replace(/[^a-zA-Z0-9-]/g, '_');
+    const filename = `Laporan_Keuangan_Lengkap_${periodPart}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Gagal membuat file Excel gabungan.' });
   }
 });
 
