@@ -274,6 +274,20 @@ elFilterDateTo.addEventListener('change', () => {
   loadActiveTab();
 });
 
+// Klik di MANA SAJA pada kotak tanggal (bukan cuma ikon kalender kecil di pojok)
+// langsung membuka date picker native browser. showPicker() baru didukung browser
+// modern (Chrome/Edge 99+) — browser lain otomatis fallback ke perilaku klik biasa
+// (fokus + buka picker lewat ikon), tidak error.
+function bukaDatePickerSaatKlik(input) {
+  input.addEventListener('click', () => {
+    if (typeof input.showPicker === 'function') {
+      try { input.showPicker(); } catch (err) { /* browser menolak (mis. dipanggil terlalu cepat) -> abaikan, fallback native */ }
+    }
+  });
+}
+bukaDatePickerSaatKlik(elFilterDateFrom);
+bukaDatePickerSaatKlik(elFilterDateTo);
+
 [[elFilterBranch, 'branch'], [elFilterDept, 'dept']].forEach(([el, key]) => {
   el.addEventListener('change', () => {
     state[key] = el.value;
@@ -283,16 +297,58 @@ elFilterDateTo.addEventListener('change', () => {
 });
 
 // ---- Chart helper ----
+// Baca warna langsung dari CSS custom property (satu sumber kebenaran dengan
+// style.css, otomatis ikut light/dark tanpa duplikasi daftar warna di JS).
+function cssVar(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
 function chartColors() {
   const dark = temaAktif() === 'dark';
   return {
-    text: dark ? '#eef0f3' : '#1c1c1c',
-    grid: dark ? '#3a3d44' : '#e3e5e9',
-    accent: '#2f6fed',
-    accent2: '#27ae60',
-    danger: '#e74c3c',
-    palette: ['#2f6fed', '#27ae60', '#f39c12', '#e74c3c', '#8e44ad', '#16a085', '#d35400', '#2c3e50'],
+    text: cssVar('--text', dark ? '#f3f4f6' : '#111827'),
+    textMuted: cssVar('--text-muted', dark ? '#9aa1ac' : '#5b6472'),
+    grid: dark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.06)',
+    accent: cssVar('--accent', '#4f46e5'),
+    positive: cssVar('--positive-fill', '#16a34a'),
+    negative: cssVar('--negative-fill', '#dc2626'),
+    neutralA: cssVar('--neutral-a', '#4f46e5'),
+    neutralB: cssVar('--neutral-b', '#93c5fd'),
+    neutralC: cssVar('--neutral-c', '#9ca3af'),
   };
+}
+
+// Format ringkas untuk label sumbu chart ("Rp 2,9 M" bukan "Rp 2.978.031.876") —
+// presisi penuh tetap ada di tooltip lewat rupiah().
+function compactRupiah(n) {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  const fmt1 = (v) => {
+    const s = v.toFixed(1);
+    return (s.endsWith('.0') ? s.slice(0, -2) : s.replace('.', ','));
+  };
+  if (abs >= 1e12) return `${sign}Rp ${fmt1(abs / 1e12)} T`;
+  if (abs >= 1e9) return `${sign}Rp ${fmt1(abs / 1e9)} M`;
+  if (abs >= 1e6) return `${sign}Rp ${fmt1(abs / 1e6)} Jt`;
+  if (abs >= 1e3) return `${sign}Rp ${Math.round(abs / 1e3)} Rb`;
+  return rupiah(n);
+}
+
+function moneyTooltipPlugin() {
+  return {
+    callbacks: {
+      label: (ctx) => {
+        const label = ctx.dataset.label && ctx.chart.data.datasets.length > 1 ? ctx.dataset.label + ': ' : '';
+        const val = ctx.parsed.y ?? ctx.parsed.x ?? ctx.parsed;
+        return label + rupiah(val);
+      },
+    },
+  };
+}
+
+function pieMoneyTooltipPlugin() {
+  return { callbacks: { label: (ctx) => `${ctx.label}: ${rupiah(ctx.parsed)}` } };
 }
 
 // Sengaja menahan (bukan melempar) error di sini: kalau Chart.js gagal dimuat
@@ -349,31 +405,38 @@ async function loadOverview() {
     data: {
       labels: data.monthlyTrend.map((m) => m.period),
       datasets: [
-        { label: 'Revenue', data: data.monthlyTrend.map((m) => m.revenue), borderColor: c.accent, backgroundColor: c.accent, tension: 0.3 },
-        { label: 'Expense', data: data.monthlyTrend.map((m) => m.expense), borderColor: c.danger, backgroundColor: c.danger, tension: 0.3 },
+        { label: 'Revenue', data: data.monthlyTrend.map((m) => m.revenue), borderColor: c.positive, backgroundColor: c.positive, tension: 0.3, pointRadius: 3 },
+        { label: 'Expense', data: data.monthlyTrend.map((m) => m.expense), borderColor: c.negative, backgroundColor: c.negative, tension: 0.3, pointRadius: 3 },
       ],
     },
-    options: baseChartOptions(c),
+    options: baseChartOptions(c, 'y'),
   });
 
   makeChart('chart-expense', {
     type: 'bar',
     data: {
       labels: data.expenseBreakdown.map((e) => e.category),
-      datasets: [{ label: 'Expense', data: data.expenseBreakdown.map((e) => e.amount), backgroundColor: c.accent }],
+      datasets: [{ label: 'Expense', data: data.expenseBreakdown.map((e) => e.amount), backgroundColor: c.accent, borderRadius: 4 }],
     },
-    options: { ...baseChartOptions(c), indexAxis: 'y' },
+    options: { ...baseChartOptions(c, 'x'), indexAxis: 'y', plugins: { ...baseChartOptions(c, 'x').plugins, legend: { display: false } } },
   });
 }
 
-function baseChartOptions(c) {
+// valueAxis: 'y' (bar/line vertikal, default) atau 'x' (bar horizontal indexAxis:'y') —
+// sumbu itu yang diberi format Rupiah ringkas; sumbu satunya (kategori/label) polos.
+function baseChartOptions(c, valueAxis = 'y') {
+  const moneyTick = { color: c.textMuted, font: { size: 11 }, callback: (v) => compactRupiah(v) };
+  const categoryTick = { color: c.textMuted, font: { size: 11 } };
   return {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { labels: { color: c.text } } },
+    plugins: {
+      legend: { labels: { color: c.text, boxWidth: 12, font: { size: 12 } } },
+      tooltip: moneyTooltipPlugin(),
+    },
     scales: {
-      x: { ticks: { color: c.text }, grid: { color: c.grid } },
-      y: { ticks: { color: c.text }, grid: { color: c.grid } },
+      x: { ticks: valueAxis === 'x' ? moneyTick : categoryTick, grid: { color: valueAxis === 'x' ? c.grid : 'transparent' } },
+      y: { ticks: valueAxis === 'y' ? moneyTick : categoryTick, grid: { color: valueAxis === 'y' ? c.grid : 'transparent' } },
     },
   };
 }
@@ -384,7 +447,10 @@ function pieChartOptions(c) {
   return {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { labels: { color: c.text } } },
+    plugins: {
+      legend: { labels: { color: c.text, boxWidth: 12, font: { size: 12 } } },
+      tooltip: pieMoneyTooltipPlugin(),
+    },
   };
 }
 
@@ -404,16 +470,26 @@ async function loadPnL() {
     { label: 'Profit Margin', value: `${fmtNum.format(data.summary.profitMargin)}%` },
   ]);
 
+  // Revenue selalu masuk (hijau), COGS/OpEx selalu mengurangi (merah) secara visual
+  // waterfall; Gross Profit & Net Income warnanya mengikuti tanda aktualnya sendiri
+  // (bisa merah kalau ternyata rugi) — bukan di-hardcode hijau.
   makeChart('chart-pnl-waterfall', {
     type: 'bar',
     data: {
       labels: ['Revenue', 'COGS', 'Gross Profit', 'OpEx', 'Net Income'],
       datasets: [{
         data: [data.summary.revenue, -data.summary.cogs, data.summary.grossProfit, -data.summary.opex, data.summary.netIncome],
-        backgroundColor: [c.accent, c.danger, c.accent2, c.danger, c.accent2],
+        backgroundColor: [
+          c.positive,
+          c.negative,
+          positifNegatif(data.summary.grossProfit) === 'nilai-negatif' ? c.negative : c.positive,
+          c.negative,
+          positifNegatif(data.summary.netIncome) === 'nilai-negatif' ? c.negative : c.positive,
+        ],
+        borderRadius: 4,
       }],
     },
-    options: { ...baseChartOptions(c), plugins: { legend: { display: false } } },
+    options: { ...baseChartOptions(c, 'y'), plugins: { ...baseChartOptions(c, 'y').plugins, legend: { display: false } } },
   });
 
   const rows = [
@@ -452,16 +528,18 @@ async function loadBalance() {
     elWarn.hidden = true;
   }
 
+  // Komposisi aset/liabilitas+ekuitas adalah kategori NETRAL (bukan positif/negatif),
+  // jadi sengaja pakai gradasi netral (aksen + biru muda + abu), bukan merah/ungu/oranye.
   makeChart('chart-assets', {
     type: 'pie',
-    data: { labels: ['Current Assets', 'Fixed Assets'], datasets: [{ data: [data.assets.current, data.assets.fixed], backgroundColor: [c.accent, c.accent2] }] },
+    data: { labels: ['Current Assets', 'Fixed Assets'], datasets: [{ data: [data.assets.current, data.assets.fixed], backgroundColor: [c.neutralA, c.neutralB] }] },
     options: pieChartOptions(c),
   });
   makeChart('chart-liab-equity', {
     type: 'pie',
     data: {
       labels: ['Current Liab.', 'LT Liab.', 'Equity'],
-      datasets: [{ data: [data.liabilities.current, data.liabilities.longterm, data.equity.total], backgroundColor: [c.danger, c.palette[4], c.accent2] }],
+      datasets: [{ data: [data.liabilities.current, data.liabilities.longterm, data.equity.total], backgroundColor: [c.neutralA, c.neutralB, c.neutralC] }],
     },
     options: pieChartOptions(c),
   });
@@ -495,16 +573,21 @@ async function loadCashflow() {
     { label: 'Ending Cash', value: rupiah(data.endingCash) },
   ]);
 
+  // Saldo awal/akhir kas = netral (bukan arus, cuma titik referensi). Operating/
+  // Investing/Financing masing-masing bisa positif (arus masuk) atau negatif (arus
+  // keluar) secara riil, jadi warnanya dinamis ikut tanda aktual, bukan di-hardcode.
+  const cfWarna = (v) => (positifNegatif(v) === 'nilai-negatif' ? c.negative : c.positive);
   makeChart('chart-cashflow', {
     type: 'bar',
     data: {
       labels: ['Beginning Cash', 'Operating', 'Investing', 'Financing', 'Ending Cash'],
       datasets: [{
         data: [data.beginningCash, data.operating, data.investing, data.financing, data.endingCash],
-        backgroundColor: [c.palette[7], c.accent, c.palette[2], c.palette[4], c.accent2],
+        backgroundColor: [c.neutralC, cfWarna(data.operating), cfWarna(data.investing), cfWarna(data.financing), c.neutralC],
+        borderRadius: 4,
       }],
     },
-    options: { ...baseChartOptions(c), plugins: { legend: { display: false } } },
+    options: { ...baseChartOptions(c, 'y'), plugins: { ...baseChartOptions(c, 'y').plugins, legend: { display: false } } },
   });
 }
 
@@ -519,11 +602,16 @@ async function loadBranch() {
     type: 'bar',
     data: {
       labels: data.branches.map((b) => b.branch),
-      datasets: [{ label: 'Net Income', data: data.branches.map((b) => b.netIncome), backgroundColor: c.accent }],
+      datasets: [{
+        label: 'Net Income',
+        data: data.branches.map((b) => b.netIncome),
+        backgroundColor: data.branches.map((b) => (positifNegatif(b.netIncome) === 'nilai-negatif' ? c.negative : c.positive)),
+        borderRadius: 4,
+      }],
     },
     options: {
-      ...baseChartOptions(c),
-      plugins: { legend: { display: false } },
+      ...baseChartOptions(c, 'y'),
+      plugins: { ...baseChartOptions(c, 'y').plugins, legend: { display: false } },
       onClick: (evt, elements) => {
         if (!elements.length) return;
         const branch = data.branches[elements[0].index].branch;
