@@ -468,37 +468,6 @@ async function openBranchDrilldown(branch) {
   elDrillOverlay.hidden = false;
 }
 
-// ---- Export ----
-document.addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-export]');
-  if (!btn) return;
-  const type = btn.dataset.export;
-  btn.disabled = true;
-  const teksAsli = btn.textContent;
-  btn.textContent = 'Membuat file...';
-  try {
-    const res = await api(`/api/export/${type}?${filterQuery()}`);
-    if (!res.ok) throw new Error('export gagal');
-    const blob = await res.blob();
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const match = disposition.match(/filename="?([^"]+)"?/);
-    const filename = match ? match[1] : `${type}.xlsx`;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    alert('Gagal export ke Excel. Coba lagi.');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = teksAsli;
-  }
-});
-
 // ---- Upload GL ----
 const elDropzone = document.getElementById('dropzone');
 const elInputGlFile = document.getElementById('input-gl-file');

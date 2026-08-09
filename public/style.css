@@ -292,20 +292,6 @@ th { color: var(--warna-muted); font-size: 12px; text-transform: uppercase; lett
   cursor: pointer;
 }
 
-.tombol-ekspor {
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 700;
-  background: var(--warna-kartu);
-  color: var(--warna-aksen);
-  border: 2px solid var(--warna-aksen);
-  border-radius: 10px;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .tombol-ekspor:hover { background: var(--warna-aksen); color: #fff; }
-}
-
 .tombol-editor { display: flex; }
 
 /* ---- Mobile ---- */
