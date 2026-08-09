@@ -6,6 +6,7 @@
 <title>Financial Dashboard — PT Manufaktur Indonesia Sejahtera</title>
 <link rel="stylesheet" href="style.css" />
 <script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/exceljs.min.js"></script>
 </head>
 <body>
 
@@ -76,6 +77,10 @@
     <div class="filter-field" id="filter-dept-field" hidden>
       <label for="filter-dept">Departemen</label>
       <select id="filter-dept"><option value="ALL">Semua Departemen</option></select>
+    </div>
+    <div class="filter-field filter-field-export">
+      <label class="label-tersembunyi" for="tombol-export-tab">Export</label>
+      <button id="tombol-export-tab" type="button" title="Export data tab ini ke Excel, sesuai filter yang aktif" disabled>⬇ Export Excel</button>
     </div>
   </div>
 

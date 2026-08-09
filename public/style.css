@@ -278,6 +278,34 @@ h3 { font-size: 15px; color: var(--text); }
   cursor: pointer;
 }
 
+/* Tombol export: bagian dari grup filter (bukan area terpisah), tinggi &
+   radius sama dengan input/dropdown filter di sebelahnya, tapi warna aksen
+   supaya tetap kebaca sebagai tombol aksi. Label di atasnya disembunyikan
+   visual saja (bukan display:none) supaya tinggi kolom tetap sejajar dengan
+   field lain yang punya label — flex align-items:flex-end di .filter-bar
+   yang membuat tombolnya jatuh pas sebaris dengan input lain. */
+.label-tersembunyi {
+  visibility: hidden;
+  height: 1em;
+}
+#tombol-export-tab {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#tombol-export-tab:hover:not(:disabled) { background: var(--accent-hover); }
+#tombol-export-tab:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ============================================================
    LAYOUT UMUM
    ============================================================ */
@@ -412,6 +440,21 @@ td.nilai-positif, td.nilai-negatif { font-variant-numeric: tabular-nums; font-we
   100% { transform: translateX(250%); }
 }
 .pesan-sukses { color: var(--positive); font-weight: 600; margin: var(--sp-3) 0 0 0; font-size: 13.5px; }
+
+/* Spinner kecil untuk state loading tombol Export (data GL bisa ribuan baris) */
+.spinner-export {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: putar-spinner 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes putar-spinner {
+  to { transform: rotate(360deg); }
+}
 
 /* ============================================================
    OVERLAY & MODAL

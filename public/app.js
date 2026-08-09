@@ -12,6 +12,11 @@ function rupiah(n) {
 function positifNegatif(n) {
   return n < 0 ? 'nilai-negatif' : 'nilai-positif';
 }
+// Label akun tampil dari field terpisah coaNo/coaDescription (bukan string
+// gabungan dari backend) — dipakai tabel UI maupun export Excel.
+function akunLabel(d) {
+  return d.coaNo ? `${d.coaNo} - ${d.coaDescription}` : d.coaDescription;
+}
 
 // ---- Sinkronisasi tinggi header sticky ----
 // app-bar & tab-nav sama-sama sticky bertumpuk. Tinggi keduanya TIDAK dihardcode
@@ -128,6 +133,12 @@ async function api(pathAndQuery, opts = {}) {
 let currentMeta = null;
 const charts = {};
 
+// Cache data laporan yang TERAKHIR SUKSES ditampilkan per tab — dipakai tombol
+// Export supaya file yang di-generate PERSIS sama dengan yang sedang tampil di
+// layar (bukan fetch ulang terpisah yang bisa saja beda kalau ada race
+// condition), sesuai aturan wajib "export = state yang sama persis".
+const lastReportData = { pnl: null, balance: null, cashflow: null, branch: null };
+
 function readStateFromURL() {
   const p = new URLSearchParams(location.search);
   return {
@@ -198,8 +209,26 @@ function setTab(tab) {
   writeStateToURL(state);
   Array.from(elTabNav.children).forEach((b) => b.classList.toggle('aktif', b.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach((el) => (el.hidden = el.id !== `tab-${tab}`));
-  document.getElementById('filter-bar').hidden = tab === 'upload';
+  // Filter bar SELALU tampil di semua tab (termasuk Upload GL) — tombol Export
+  // ada di dalamnya dan butuh filter Periode/Cabang/Departemen tetap bisa
+  // diatur di tab manapun, termasuk saat mengekspor data GL mentah.
+  updateTombolExportLabel(tab);
   loadActiveTab();
+}
+
+const EXPORT_LABEL_PER_TAB = {
+  overview: null, // tab Overview tidak punya export tersendiri (sudah tercakup di tab lain)
+  pnl: 'Export Laba Rugi ke Excel',
+  balance: 'Export Neraca ke Excel',
+  cashflow: 'Export Cash Flow ke Excel',
+  branch: 'Export Kinerja Cabang ke Excel',
+  upload: 'Export Data GL ke Excel',
+};
+
+function updateTombolExportLabel(tab) {
+  const label = EXPORT_LABEL_PER_TAB[tab];
+  elTombolExportTab.title = label || 'Pilih tab laporan untuk export';
+  elTombolExportTab.disabled = !currentMeta || !label;
 }
 
 // ---- Filters ----
@@ -212,6 +241,7 @@ const elFilterDateToField = document.getElementById('filter-date-to-field');
 const elFilterBranch = document.getElementById('filter-branch');
 const elFilterDept = document.getElementById('filter-dept');
 const elFilterDeptField = document.getElementById('filter-dept-field');
+const elTombolExportTab = document.getElementById('tombol-export-tab');
 
 function populateFilters(meta) {
   elFilterBranch.innerHTML = '<option value="ALL">Semua Cabang</option>' +
@@ -459,6 +489,7 @@ async function loadPnL() {
   const res = await api(`/api/reports/pnl?${filterQuery()}`);
   if (!res.ok) return;
   const { data } = await res.json();
+  lastReportData.pnl = data;
   const c = chartColors();
 
   renderKpiGrid(document.getElementById('pnl-kpi'), [
@@ -493,9 +524,9 @@ async function loadPnL() {
   });
 
   const rows = [
-    ...data.detail.revenue.map((d) => ['Revenue', d.key, d.value]),
-    ...data.detail.cogs.map((d) => ['COGS', d.key, d.value]),
-    ...data.detail.opex.map((d) => ['Operating Expense', d.key, d.value]),
+    ...data.detail.revenue.map((d) => ['Revenue', akunLabel(d), d.value]),
+    ...data.detail.cogs.map((d) => ['COGS', akunLabel(d), d.value]),
+    ...data.detail.opex.map((d) => ['Operating Expense', akunLabel(d), d.value]),
   ];
   renderTable('pnl-table', rows);
 }
@@ -511,6 +542,7 @@ async function loadBalance() {
   const res = await api(`/api/reports/balance?${filterQuery()}`);
   if (!res.ok) return;
   const { data } = await res.json();
+  lastReportData.balance = data;
   const c = chartColors();
 
   renderKpiGrid(document.getElementById('balance-kpi'), [
@@ -523,7 +555,20 @@ async function loadBalance() {
   const elWarn = document.getElementById('balance-warning');
   if (!data.summary.balanced) {
     elWarn.hidden = false;
-    elWarn.textContent = `⚠️ Neraca tidak seimbang. Selisih Assets vs (Liabilities+Equity): ${rupiah(data.summary.diff)}. Periksa klasifikasi CoA di file GL.`;
+    let html = `⚠️ Neraca tidak seimbang. Selisih Assets vs (Liabilities+Equity): <strong>${rupiah(data.summary.diff)}</strong>.`;
+    if (data.unclassified.count > 0) {
+      // Diagnosa langsung: akun mana yang tidak masuk kategori manapun (kode CoA
+      // di luar 1-6xxxx) dan karena itu nilainya hilang dari semua total di atas.
+      html += ` Ditemukan <strong>${data.unclassified.count} kode akun</strong> yang tidak dikenali polanya (bukan awalan 1-6),
+        total nilai ${rupiah(data.unclassified.totalValue)} — baris ini <u>dikecualikan</u> dari semua perhitungan neraca:
+        <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>CoA No</th><th>Deskripsi</th><th>Nominal</th></tr></thead><tbody>
+          ${data.unclassified.accounts.map((a) => `<tr><td>${a.coaNo || '(kosong)'}</td><td>${a.coaDescription || '-'}</td><td class="${positifNegatif(a.value)}">${rupiah(a.value)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <p style="margin:8px 0 0 0">Perbaiki kode akun ini di file GL (harus diawali digit 1-6) lalu unggah ulang.</p>`;
+    } else {
+      html += ' Tidak ada kode akun tak dikenali — kemungkinan selisih dari kesalahan pencatatan di sumber data GL. Periksa klasifikasi CoA di file GL.';
+    }
+    elWarn.innerHTML = html;
   } else {
     elWarn.hidden = true;
   }
@@ -545,13 +590,13 @@ async function loadBalance() {
   });
 
   renderTable('balance-assets-table', [
-    ...data.assets.detail.current.map((d) => ['Current Assets', d.key, d.value]),
-    ...data.assets.detail.fixed.map((d) => ['Fixed Assets', d.key, d.value]),
+    ...data.assets.detail.current.map((d) => ['Current Assets', akunLabel(d), d.value]),
+    ...data.assets.detail.fixed.map((d) => ['Fixed Assets', akunLabel(d), d.value]),
   ]);
   renderTable('balance-liab-table', [
-    ...data.liabilities.detail.current.map((d) => ['Current Liabilities', d.key, d.value]),
-    ...data.liabilities.detail.longterm.map((d) => ['LT Liabilities', d.key, d.value]),
-    ...data.equity.detail.map((d) => ['Equity', d.key, d.value]),
+    ...data.liabilities.detail.current.map((d) => ['Current Liabilities', akunLabel(d), d.value]),
+    ...data.liabilities.detail.longterm.map((d) => ['LT Liabilities', akunLabel(d), d.value]),
+    ...data.equity.detail.map((d) => ['Equity', akunLabel(d), d.value]),
   ]);
 }
 
@@ -560,6 +605,7 @@ async function loadCashflow() {
   const res = await api(`/api/reports/cashflow?${filterQuery()}`);
   if (!res.ok) return;
   const { data } = await res.json();
+  lastReportData.cashflow = data;
   const c = chartColors();
 
   document.getElementById('cashflow-note').textContent = 'ℹ️ ' + data.note;
@@ -596,6 +642,7 @@ async function loadBranch() {
   const res = await api(`/api/reports/branch?${filterQuery()}`);
   if (!res.ok) return;
   const { data } = await res.json();
+  lastReportData.branch = data;
   const c = chartColors();
 
   makeChart('chart-branch', {
@@ -648,9 +695,9 @@ async function openBranchDrilldown(branch) {
     `<span>Kinerja Cabang</span> › <strong>${branch}</strong> (Revenue ${rupiah(data.summary.revenue)}, Net Income ${rupiah(data.summary.netIncome)})`;
 
   const rows = [
-    ...data.detail.revenue.map((d) => ['Revenue: ' + d.key, d.value]),
-    ...data.detail.cogs.map((d) => ['COGS: ' + d.key, d.value]),
-    ...data.detail.opex.map((d) => ['OpEx: ' + d.key, d.value]),
+    ...data.detail.revenue.map((d) => ['Revenue: ' + akunLabel(d), d.value]),
+    ...data.detail.cogs.map((d) => ['COGS: ' + akunLabel(d), d.value]),
+    ...data.detail.opex.map((d) => ['OpEx: ' + akunLabel(d), d.value]),
   ];
   const tbody = document.querySelector('#drilldown-table tbody');
   tbody.innerHTML = rows.map((r) => `<tr><td>${r[0]}</td><td class="${positifNegatif(r[1])}">${rupiah(r[1])}</td></tr>`).join('') ||
@@ -781,6 +828,416 @@ function renderGlCurrentInfo(meta) {
   `;
 }
 
+// ============================================================
+// EXPORT EXCEL PER TAB (client-side, exceljs)
+// Prinsip wajib: data yang di-export HARUS state yang sama persis dengan yang
+// sedang tampil di layar (lastReportData + state filter saat ini) — bukan
+// fetch/hitung ulang terpisah yang berisiko tidak sinkron.
+// ============================================================
+
+const XLS_HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } }; // abu-abu muda
+const XLS_CURRENCY_FMT = '"Rp" #,##0;[Red]-"Rp" #,##0';
+const XLS_PERCENT_FMT = '0.0"%"';
+const XLS_DATE_FMT = 'dd-mm-yyyy';
+const XLS_THIN_BORDER = {
+  top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+  left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+  bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+  right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+};
+
+// Label periode aktif untuk header file & nama file — mengikuti filter kalender
+// (Dari/Sampai Tanggal) kalau di-set, atau rentang penuh data (YTD) kalau tidak.
+function labelPeriodeAktif() {
+  if (state.dateFrom && state.dateTo) return `${state.dateFrom} s/d ${state.dateTo}`;
+  if (state.dateFrom) return `Sejak ${state.dateFrom}`;
+  if (state.dateTo) return `Sampai ${state.dateTo}`;
+  if (currentMeta && currentMeta.dateRange) return `${currentMeta.dateRange.min} s/d ${currentMeta.dateRange.max} (YTD)`;
+  return (currentMeta && currentMeta.periodLabel) || 'Semua (YTD)';
+}
+
+function sanitizeFilenamePart(s) {
+  return String(s || '').replace(/[^a-zA-Z0-9-]+/g, '');
+}
+
+// Format: [NamaTab]_[NamaCabang]_[dariTanggal]_[sampaiTanggal atau label]_[YYYYMMDD].xlsx
+function buildExportFilename(tabLabel) {
+  const cabang = state.branch === 'ALL' ? 'SemuaCabang' : sanitizeFilenamePart(state.branch);
+  let periode;
+  if (state.dateFrom && state.dateTo) {
+    periode = `${state.dateFrom}_${state.dateTo}`;
+  } else if (currentMeta && currentMeta.dateRange) {
+    periode = `${currentMeta.dateRange.min}_${currentMeta.dateRange.max}`;
+  } else {
+    periode = 'YTD';
+  }
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  return `${tabLabel}_${cabang}_${periode}_${stamp}.xlsx`;
+}
+
+// Beberapa baris header di puncak sheet: identitas laporan + ringkasan filter
+// yang dipakai — bukti bahwa isi file = kondisi filter saat tombol Export diklik.
+function addExportHeader(sheet, judulLaporan) {
+  sheet.getCell('A1').value = 'PT Manufaktur Indonesia Sejahtera';
+  sheet.getCell('A1').font = { bold: true, size: 14 };
+  sheet.getCell('A2').value = judulLaporan;
+  sheet.getCell('A2').font = { bold: true, size: 12, color: { argb: 'FF4F46E5' } };
+  const info = [
+    `Periode: ${labelPeriodeAktif()}`,
+    `Cabang: ${state.branch === 'ALL' ? 'Semua Cabang' : state.branch}`,
+    `Departemen: ${state.dept === 'ALL' ? 'Semua Departemen' : state.dept}`,
+    `Tanggal Export: ${new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}`,
+  ];
+  info.forEach((text, i) => {
+    const cell = sheet.getCell(`A${3 + i}`);
+    cell.value = text;
+    cell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+  });
+  return 3 + info.length + 1; // baris kosong pemisah sebelum tabel
+}
+
+function styleXlsTableHeader(row) {
+  row.font = { bold: true };
+  row.eachCell((cell) => {
+    cell.fill = XLS_HEADER_FILL;
+    cell.border = XLS_THIN_BORDER;
+  });
+}
+
+// headers: [{ label, key?, width?, fmt?: 'currency'|'percent'|'date' }]
+// rows: array of plain objects atau array — pakai accessor `get(row, colDef)`
+function addExportTable(sheet, startRow, columns, rows) {
+  const headerRow = sheet.getRow(startRow);
+  columns.forEach((col, i) => (headerRow.getCell(i + 1).value = col.label));
+  styleXlsTableHeader(headerRow);
+
+  if (rows.length === 0) {
+    const emptyRow = sheet.getRow(startRow + 1);
+    emptyRow.getCell(1).value = 'Tidak ada data untuk filter yang dipilih.';
+    emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+    sheet.mergeCells(startRow + 1, 1, startRow + 1, columns.length);
+    return startRow + 2;
+  }
+
+  rows.forEach((rowData, idx) => {
+    const row = sheet.getRow(startRow + 1 + idx);
+    columns.forEach((col, i) => {
+      const cell = row.getCell(i + 1);
+      cell.value = typeof col.value === 'function' ? col.value(rowData) : rowData[col.key];
+      cell.border = XLS_THIN_BORDER;
+      if (col.fmt === 'currency') cell.numFmt = XLS_CURRENCY_FMT;
+      if (col.fmt === 'percent') cell.numFmt = XLS_PERCENT_FMT;
+      if (col.fmt === 'date') cell.numFmt = XLS_DATE_FMT;
+    });
+  });
+
+  // Auto-width sederhana berdasarkan konten terpanjang per kolom.
+  columns.forEach((col, i) => {
+    let maxLen = String(col.label).length;
+    rows.forEach((rowData) => {
+      const v = typeof col.value === 'function' ? col.value(rowData) : rowData[col.key];
+      const len = v == null ? 0 : String(v instanceof Date ? v.toLocaleDateString('id-ID') : v).length;
+      if (len > maxLen) maxLen = len;
+    });
+    sheet.getColumn(i + 1).width = Math.min(Math.max(maxLen + 3, 12), 45);
+  });
+
+  return startRow + 1 + rows.length;
+}
+
+function addExportKpiBlock(sheet, startRow, pairs) {
+  let r = startRow;
+  for (const [label, value, fmt] of pairs) {
+    const labelCell = sheet.getCell(`A${r}`);
+    labelCell.value = label;
+    labelCell.font = { bold: true };
+    const valCell = sheet.getCell(`B${r}`);
+    valCell.value = value;
+    if (fmt === 'currency') valCell.numFmt = XLS_CURRENCY_FMT;
+    if (fmt === 'percent') valCell.numFmt = XLS_PERCENT_FMT;
+    r++;
+  }
+  sheet.getColumn(1).width = 28;
+  sheet.getColumn(2).width = 22;
+  return r;
+}
+
+async function downloadWorkbook(workbook, filename) {
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ---- Builder per tab ----
+
+function exportPnLWorkbook() {
+  const data = lastReportData.pnl;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Financial Dashboard';
+  workbook.created = new Date();
+
+  const ringkasan = workbook.addWorksheet('Ringkasan');
+  let r = addExportHeader(ringkasan, 'Laporan Laba Rugi (P&L)');
+  addExportKpiBlock(ringkasan, r, [
+    ['Revenue', data.summary.revenue, 'currency'],
+    ['COGS', data.summary.cogs, 'currency'],
+    ['Gross Profit', data.summary.grossProfit, 'currency'],
+    ['Operating Expense', data.summary.opex, 'currency'],
+    ['Net Income', data.summary.netIncome, 'currency'],
+    ['Profit Margin (%)', data.summary.profitMargin, 'percent'],
+  ]);
+
+  const rincian = workbook.addWorksheet('Rincian Akun');
+  r = addExportHeader(rincian, 'Rincian Akun — Laba Rugi');
+  const detailRows = [
+    ...data.detail.revenue.map((d) => ({ kategori: 'Revenue', ...d })),
+    ...data.detail.cogs.map((d) => ({ kategori: 'COGS', ...d })),
+    ...data.detail.opex.map((d) => ({ kategori: 'Operating Expense', ...d })),
+  ];
+  addExportTable(rincian, r, [
+    { label: 'Kategori', key: 'kategori' },
+    { label: 'Kode Akun', key: 'coaNo' },
+    { label: 'Nama Akun', key: 'coaDescription' },
+    { label: 'Nominal', key: 'value', fmt: 'currency' },
+  ], detailRows);
+
+  const alur = workbook.addWorksheet('Alur Laba Rugi');
+  r = addExportHeader(alur, 'Alur Laba Rugi');
+  addExportTable(alur, r, [
+    { label: 'Tahap', key: 'tahap' },
+    { label: 'Nominal', key: 'nominal', fmt: 'currency' },
+  ], [
+    { tahap: 'Revenue', nominal: data.summary.revenue },
+    { tahap: 'COGS', nominal: -data.summary.cogs },
+    { tahap: 'Gross Profit', nominal: data.summary.grossProfit },
+    { tahap: 'Operating Expense', nominal: -data.summary.opex },
+    { tahap: 'Net Income', nominal: data.summary.netIncome },
+  ]);
+
+  return { workbook, filename: buildExportFilename('LabaRugi') };
+}
+
+function exportBalanceWorkbook() {
+  const data = lastReportData.balance;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Financial Dashboard';
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet('Neraca');
+  let r = addExportHeader(sheet, 'Neraca (Balance Sheet)');
+
+  sheet.getCell(`A${r}`).value = 'ASET';
+  sheet.getCell(`A${r}`).font = { bold: true, size: 12 };
+  r += 1;
+  r = addExportTable(sheet, r, [
+    { label: 'Kategori', key: 'kategori' },
+    { label: 'Kode Akun', key: 'coaNo' },
+    { label: 'Nama Akun', key: 'coaDescription' },
+    { label: 'Nominal', key: 'value', fmt: 'currency' },
+  ], [
+    ...data.assets.detail.current.map((d) => ({ kategori: 'Current Assets', ...d })),
+    ...data.assets.detail.fixed.map((d) => ({ kategori: 'Fixed Assets', ...d })),
+  ]);
+  sheet.getCell(`A${r}`).value = 'Total Aset';
+  sheet.getCell(`A${r}`).font = { bold: true };
+  sheet.getCell(`D${r}`).value = data.summary.totalAssets;
+  sheet.getCell(`D${r}`).font = { bold: true };
+  sheet.getCell(`D${r}`).numFmt = XLS_CURRENCY_FMT;
+  r += 2;
+
+  sheet.getCell(`A${r}`).value = 'LIABILITAS';
+  sheet.getCell(`A${r}`).font = { bold: true, size: 12 };
+  r += 1;
+  r = addExportTable(sheet, r, [
+    { label: 'Kategori', key: 'kategori' },
+    { label: 'Kode Akun', key: 'coaNo' },
+    { label: 'Nama Akun', key: 'coaDescription' },
+    { label: 'Nominal', key: 'value', fmt: 'currency' },
+  ], [
+    ...data.liabilities.detail.current.map((d) => ({ kategori: 'Current Liabilities', ...d })),
+    ...data.liabilities.detail.longterm.map((d) => ({ kategori: 'LT Liabilities', ...d })),
+  ]);
+  sheet.getCell(`A${r}`).value = 'Total Liabilitas';
+  sheet.getCell(`A${r}`).font = { bold: true };
+  sheet.getCell(`D${r}`).value = data.summary.totalLiabilities;
+  sheet.getCell(`D${r}`).font = { bold: true };
+  sheet.getCell(`D${r}`).numFmt = XLS_CURRENCY_FMT;
+  r += 2;
+
+  sheet.getCell(`A${r}`).value = 'EKUITAS';
+  sheet.getCell(`A${r}`).font = { bold: true, size: 12 };
+  r += 1;
+  r = addExportTable(sheet, r, [
+    { label: 'Kategori', key: 'kategori' },
+    { label: 'Kode Akun', key: 'coaNo' },
+    { label: 'Nama Akun', key: 'coaDescription' },
+    { label: 'Nominal', key: 'value', fmt: 'currency' },
+  ], data.equity.detail.map((d) => ({ kategori: 'Equity', ...d })));
+  sheet.getCell(`A${r}`).value = 'Total Ekuitas';
+  sheet.getCell(`A${r}`).font = { bold: true };
+  sheet.getCell(`D${r}`).value = data.summary.totalEquity;
+  sheet.getCell(`D${r}`).font = { bold: true };
+  sheet.getCell(`D${r}`).numFmt = XLS_CURRENCY_FMT;
+  r += 2;
+
+  sheet.getCell(`A${r}`).value = 'Total Liabilitas + Ekuitas';
+  sheet.getCell(`A${r}`).font = { bold: true };
+  sheet.getCell(`D${r}`).value = data.summary.totalLiabilities + data.summary.totalEquity;
+  sheet.getCell(`D${r}`).font = { bold: true };
+  sheet.getCell(`D${r}`).numFmt = XLS_CURRENCY_FMT;
+  r += 1;
+  sheet.getCell(`A${r}`).value = data.summary.balanced ? '✅ Balance (Aset = Liabilitas + Ekuitas)' : `⚠️ TIDAK BALANCE — selisih ${rupiah(data.summary.diff)}`;
+  sheet.getCell(`A${r}`).font = { bold: true, color: { argb: data.summary.balanced ? 'FF15803D' : 'FFB91C1C' } };
+  sheet.mergeCells(r, 1, r, 4);
+
+  return { workbook, filename: buildExportFilename('Neraca') };
+}
+
+function exportCashflowWorkbook() {
+  const data = lastReportData.cashflow;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Financial Dashboard';
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet('Cash Flow');
+  let r = addExportHeader(sheet, 'Cash Flow Statement (Estimasi)');
+  sheet.getCell(`A${r}`).value = data.note;
+  sheet.getCell(`A${r}`).font = { italic: true, size: 9, color: { argb: 'FF6B7280' } };
+  sheet.mergeCells(r, 1, r, 2);
+  r += 2;
+
+  addExportKpiBlock(sheet, r, [
+    ['Saldo Kas Awal (estimasi)', data.beginningCash, 'currency'],
+    ['Operating Activities', data.operating, 'currency'],
+    ['Investing Activities', data.investing, 'currency'],
+    ['Financing Activities', data.financing, 'currency'],
+    ['Net Change in Cash', data.netChange, 'currency'],
+    ['Saldo Kas Akhir', data.endingCash, 'currency'],
+  ]);
+
+  return { workbook, filename: buildExportFilename('CashFlow') };
+}
+
+function exportBranchWorkbook() {
+  const data = lastReportData.branch;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Financial Dashboard';
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet('Kinerja Cabang');
+  let r = addExportHeader(sheet, 'Kinerja Cabang');
+
+  const branches = [...data.branches].sort((a, b) => b.netIncome - a.netIncome);
+  r = addExportTable(sheet, r, [
+    { label: 'Cabang', key: 'branch' },
+    { label: 'Revenue', key: 'revenue', fmt: 'currency' },
+    { label: 'Expense', key: 'expense', fmt: 'currency' },
+    { label: 'Net Income', key: 'netIncome', fmt: 'currency' },
+    { label: 'Margin (%)', key: 'margin', fmt: 'percent' },
+  ], branches);
+
+  if (branches.length > 0) {
+    const totalRevenue = branches.reduce((s, b) => s + b.revenue, 0);
+    const totalExpense = branches.reduce((s, b) => s + b.expense, 0);
+    const totalNetIncome = branches.reduce((s, b) => s + b.netIncome, 0);
+    const row = sheet.getRow(r);
+    row.getCell(1).value = branches.length > 1 ? 'Total' : branches[0].branch;
+    row.getCell(1).font = { bold: true };
+    row.getCell(2).value = totalRevenue;
+    row.getCell(3).value = totalExpense;
+    row.getCell(4).value = totalNetIncome;
+    row.getCell(5).value = totalRevenue ? IDR_ROUND((totalNetIncome / totalRevenue) * 100) : 0;
+    [2, 3, 4].forEach((c) => { row.getCell(c).numFmt = XLS_CURRENCY_FMT; row.getCell(c).font = { bold: true }; });
+    row.getCell(5).numFmt = XLS_PERCENT_FMT;
+    row.getCell(5).font = { bold: true };
+    row.eachCell((cell) => (cell.border = XLS_THIN_BORDER));
+  }
+
+  return { workbook, filename: buildExportFilename('KinerjaCabang') };
+}
+
+function IDR_ROUND(n) {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+// GL mentah butuh fetch terpisah (baris transaksi lengkap tidak pernah dikirim
+// ke browser untuk tab lain supaya payload halaman tetap ringan) — diambil
+// tepat saat tombol diklik, dengan filter yang sama seperti laporan lain.
+async function exportGLWorkbook() {
+  const res = await api(`/api/gl/rows?${filterQuery()}`);
+  if (!res.ok) throw new Error('Gagal mengambil data GL.');
+  const { rows } = await res.json();
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Financial Dashboard';
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet('Data GL');
+  let r = addExportHeader(sheet, 'Data GL (Raw)');
+  sheet.getCell(`A${r}`).value = `Total baris: ${rows.length}`;
+  sheet.getCell(`A${r}`).font = { italic: true, size: 9, color: { argb: 'FF6B7280' } };
+  r += 2;
+
+  // Kolom = union semua nama header asli yang pernah terdeteksi di file (raw),
+  // supaya export GL menyertakan SEMUA kolom asli (Reference Number, Created
+  // By, Notes, Project, dst) — bukan cuma field yang dipakai untuk kalkulasi.
+  const rawKeys = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    Object.keys(row.raw || {}).forEach((k) => {
+      if (!seen.has(k)) { seen.add(k); rawKeys.push(k); }
+    });
+  });
+
+  const columns = rawKeys.map((key) => ({
+    label: key,
+    value: (row) => {
+      const v = row.raw ? row.raw[key] : undefined;
+      return v === undefined || v === null || v === '' ? '' : v;
+    },
+  }));
+
+  addExportTable(sheet, r, columns, rows);
+
+  return { workbook, filename: buildExportFilename('DataGL') };
+}
+
+// ---- Klik tombol export (kontekstual sesuai tab aktif) ----
+elTombolExportTab.addEventListener('click', async () => {
+  if (!currentMeta) return;
+  const builders = { pnl: exportPnLWorkbook, balance: exportBalanceWorkbook, cashflow: exportCashflowWorkbook, branch: exportBranchWorkbook, upload: exportGLWorkbook };
+  const builder = builders[state.tab];
+  if (!builder) return;
+
+  // Data tab ini belum pernah berhasil dimuat (mis. baru login langsung klik cepat) —
+  // jangan export data lama/kosong, minta user tunggu render selesai dulu.
+  if (state.tab !== 'upload' && !lastReportData[state.tab]) {
+    alert('Data laporan belum selesai dimuat. Coba lagi sebentar.');
+    return;
+  }
+
+  const teksAsli = elTombolExportTab.innerHTML;
+  elTombolExportTab.disabled = true;
+  elTombolExportTab.innerHTML = '<span class="spinner-export"></span> Membuat file...';
+  try {
+    const { workbook, filename } = await builder();
+    await downloadWorkbook(workbook, filename);
+  } catch (err) {
+    console.error('Export gagal:', err);
+    alert('Gagal membuat file Excel. Coba lagi.');
+  } finally {
+    elTombolExportTab.disabled = false;
+    elTombolExportTab.innerHTML = teksAsli;
+  }
+});
+
 // ---- Load meta & bootstrap ----
 async function loadMeta() {
   try {
@@ -791,6 +1248,7 @@ async function loadMeta() {
       renderGlCurrentInfo(null);
       populateFilters({ periods: [], branches: [], departments: [] });
       elTombolExportSemua.hidden = true;
+      updateTombolExportLabel(state.tab);
       return;
     }
     if (!res.ok) return;
@@ -800,6 +1258,7 @@ async function loadMeta() {
     renderGlCurrentInfo(meta);
     populateFilters(meta);
     elTombolExportSemua.hidden = false;
+    updateTombolExportLabel(state.tab);
   } catch (e) { /* ditangani di api() */ }
 }
 
@@ -849,8 +1308,8 @@ async function loadActiveTab() {
 async function init() {
   Array.from(elTabNav.children).forEach((b) => b.classList.toggle('aktif', b.dataset.tab === state.tab));
   document.querySelectorAll('.tab-panel').forEach((el) => (el.hidden = el.id !== `tab-${state.tab}`));
-  document.getElementById('filter-bar').hidden = state.tab === 'upload';
-  await loadMeta();
+  updateTombolExportLabel(state.tab);
+  await loadMeta(); // ikut update label export (currentMeta baru terisi di sini)
   await loadActiveTab();
 }
 

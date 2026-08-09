@@ -116,6 +116,24 @@ app.get('/api/gl/meta', async (req, res) => {
   }
 });
 
+// Baris GL mentah (sudah difilter) — dipakai tombol Export Excel di tab Upload GL.
+// Sengaja tidak digabung ke /api/gl/meta supaya payload normal (meta saja) tetap
+// ringan; baris lengkap (termasuk `raw` semua kolom asli) hanya diambil saat
+// admin benar-benar klik export.
+app.get('/api/gl/rows', async (req, res) => {
+  try {
+    const gl = await store.getGL();
+    if (!gl) return res.status(404).json({ error: 'Belum ada data GL yang diunggah.' });
+
+    const { period, branch, dept, dateFrom, dateTo } = req.query;
+    const rows = calc.filterRows(gl.rows, { period, branch, department: dept, dateFrom, dateTo });
+    res.json({ meta: gl.meta, rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Gagal membaca baris GL.' });
+  }
+});
+
 // ---- FEATURE 2-6: Reports ----
 app.get('/api/reports/:type', async (req, res) => {
   try {
