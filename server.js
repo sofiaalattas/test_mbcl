@@ -125,8 +125,8 @@ app.get('/api/reports/:type', async (req, res) => {
     const gl = await store.getGL();
     if (!gl) return res.status(404).json({ error: 'Belum ada data GL yang diunggah.' });
 
-    const { period, branch, dept } = req.query;
-    const data = builder(gl.rows, { period, branch, department: dept });
+    const { period, branch, dept, dateFrom, dateTo } = req.query;
+    const data = builder(gl.rows, { period, branch, department: dept, dateFrom, dateTo });
     res.json({ meta: gl.meta, data });
   } catch (err) {
     console.error(err);
@@ -143,8 +143,8 @@ app.get('/api/export/:type', async (req, res) => {
     const gl = await store.getGL();
     if (!gl) return res.status(404).json({ error: 'Belum ada data GL yang diunggah.' });
 
-    const { period, branch, dept } = req.query;
-    const data = builder(gl.rows, { period, branch, department: dept });
+    const { period, branch, dept, dateFrom, dateTo } = req.query;
+    const data = builder(gl.rows, { period, branch, department: dept, dateFrom, dateTo });
     const buffer = await buildReportWorkbookBuffer(req.params.type, data, gl.meta);
 
     const periodPart = (period && period !== 'ALL' ? period : gl.meta.periodLabel || 'YTD').replace(/[^a-zA-Z0-9-]/g, '_');

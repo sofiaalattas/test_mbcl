@@ -50,9 +50,23 @@
   </nav>
 
   <div class="filter-bar" id="filter-bar">
-    <div class="filter-field">
-      <label for="filter-period">Periode</label>
-      <select id="filter-period"><option value="ALL">Semua (YTD)</option></select>
+    <div class="filter-field" id="filter-preset-field">
+      <label for="filter-preset">Periode</label>
+      <select id="filter-preset">
+        <option value="ALL">Semua (YTD)</option>
+        <option value="THIS_MONTH">Bulan Ini</option>
+        <option value="LAST_MONTH">Bulan Lalu</option>
+        <option value="LAST_3_MONTHS">3 Bulan Terakhir</option>
+        <option value="CUSTOM">Kustom…</option>
+      </select>
+    </div>
+    <div class="filter-field filter-field-tanggal" id="filter-date-from-field">
+      <label for="filter-date-from">Dari Tanggal</label>
+      <input type="date" id="filter-date-from" />
+    </div>
+    <div class="filter-field filter-field-tanggal" id="filter-date-to-field">
+      <label for="filter-date-to">Sampai Tanggal</label>
+      <input type="date" id="filter-date-to" />
     </div>
     <div class="filter-field">
       <label for="filter-branch">Cabang</label>

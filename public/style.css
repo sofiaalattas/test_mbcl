@@ -11,6 +11,9 @@
   --warna-warning-bg: #fff4e5;
   --warna-warning-border: #f39c12;
   --radius: 16px;
+  /* Fallback kalau JS belum sempat sinkronkan tinggi asli (lihat syncStickyOffsets di app.js) */
+  --app-bar-h: 69px;
+  --tab-nav-h: 53px;
 }
 
 :root[data-theme="dark"] {
@@ -105,7 +108,7 @@ h1, h2, h3 { margin: 0 0 4px 0; }
   background: var(--warna-kartu);
   border-bottom: 1px solid var(--warna-border);
   position: sticky;
-  top: 62px;
+  top: var(--app-bar-h);
   z-index: 20;
 }
 .tab-item {
@@ -131,10 +134,12 @@ h1, h2, h3 { margin: 0 0 4px 0; }
   background: var(--warna-kartu);
   border-bottom: 1px solid var(--warna-border);
   position: sticky;
-  top: 108px;
+  top: calc(var(--app-bar-h) + var(--tab-nav-h));
   z-index: 15;
 }
+.filter-bar[hidden] { display: none; }
 .filter-field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+.filter-field-tanggal input[type="date"] { min-width: 0; }
 .filter-field label { font-size: 12px; font-weight: 700; color: var(--warna-muted); }
 .filter-field select,
 .filter-field input {
@@ -297,6 +302,9 @@ th { color: var(--warna-muted); font-size: 12px; text-transform: uppercase; lett
 /* ---- Mobile ---- */
 @media (max-width: 640px) {
   .app-bar-judul { font-size: 14px; }
+  /* filter-bar dibuat non-sticky di mobile (hemat ruang vertikal di layar kecil) —
+     tab-nav TETAP pakai top: var(--app-bar-h) yang sama seperti desktop, JANGAN
+     di-set ke 0: app-bar juga sticky di top:0, jadi tab-nav akan tertutup/tersembunyi
+     di baliknya kalau top-nya disamakan (sudah pernah jadi bug nyata, lihat riwayat commit). */
   .filter-bar { position: static; }
-  .tab-nav { top: 0; }
 }

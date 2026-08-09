@@ -13,6 +13,30 @@ function positifNegatif(n) {
   return n < 0 ? 'nilai-negatif' : 'nilai-positif';
 }
 
+// ---- Sinkronisasi tinggi header sticky ----
+// app-bar & tab-nav sama-sama sticky bertumpuk. Tinggi keduanya TIDAK dihardcode
+// di CSS (bisa berubah kalau nama perusahaan panjang, font beda, atau layar sempit
+// bikin teks wrap) — kalau top offset di CSS tidak sesuai tinggi asli, elemen akan
+// saling tumpuk/menutupi teks saat discroll. Diukur & disimpan sebagai CSS variable,
+// dan dipantau ResizeObserver supaya selalu akurat walau kontennya berubah.
+function syncStickyOffsets() {
+  const appBar = document.querySelector('.app-bar');
+  const tabNav = document.getElementById('tab-nav');
+  if (!appBar || !tabNav) return;
+  const root = document.documentElement;
+  function update() {
+    root.style.setProperty('--app-bar-h', `${appBar.offsetHeight}px`);
+    root.style.setProperty('--tab-nav-h', `${tabNav.offsetHeight}px`);
+  }
+  update();
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(update).observe(appBar);
+    new ResizeObserver(update).observe(tabNav);
+  } else {
+    window.addEventListener('resize', update);
+  }
+}
+
 // ---- Tema ----
 const elTombolTema = document.getElementById('tombol-tema');
 function temaAktif() {
@@ -54,6 +78,7 @@ function showLogin() {
 function showApp() {
   elLoginOverlay.hidden = true;
   elApp.hidden = false;
+  syncStickyOffsets();
   init();
 }
 
@@ -107,7 +132,9 @@ function readStateFromURL() {
   const p = new URLSearchParams(location.search);
   return {
     tab: p.get('tab') || 'overview',
-    period: p.get('period') || 'ALL',
+    preset: p.get('preset') || 'ALL',
+    dateFrom: p.get('from') || '',
+    dateTo: p.get('to') || '',
     branch: p.get('branch') || 'ALL',
     dept: p.get('dept') || 'ALL',
   };
@@ -115,7 +142,9 @@ function readStateFromURL() {
 function writeStateToURL(state) {
   const p = new URLSearchParams();
   p.set('tab', state.tab);
-  if (state.period && state.period !== 'ALL') p.set('period', state.period);
+  if (state.preset && state.preset !== 'ALL') p.set('preset', state.preset);
+  if (state.dateFrom) p.set('from', state.dateFrom);
+  if (state.dateTo) p.set('to', state.dateTo);
   if (state.branch && state.branch !== 'ALL') p.set('branch', state.branch);
   if (state.dept && state.dept !== 'ALL') p.set('dept', state.dept);
   history.replaceState(null, '', `?${p.toString()}`);
@@ -125,10 +154,35 @@ let state = readStateFromURL();
 
 function filterQuery() {
   const p = new URLSearchParams();
-  if (state.period !== 'ALL') p.set('period', state.period);
+  if (state.dateFrom) p.set('dateFrom', state.dateFrom);
+  if (state.dateTo) p.set('dateTo', state.dateTo);
   if (state.branch !== 'ALL') p.set('branch', state.branch);
   if (state.dept !== 'ALL') p.set('dept', state.dept);
   return p.toString();
+}
+
+// Hitung rentang tanggal dari preset ("Bulan Ini" dst). Acuan "hari ini" dipakai
+// tanggal TERAKHIR di data GL (bukan jam device) — data GL biasanya historis,
+// jadi "Bulan Ini" harus relatif terhadap data supaya tidak pernah kosong.
+function computePresetRange(preset, meta) {
+  if (!meta || !meta.dateRange) return { from: '', to: '' };
+  const { min, max } = meta.dateRange;
+  const clamp = (iso) => (iso < min ? min : iso > max ? max : iso);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  const ref = new Date(`${max}T00:00:00.000Z`);
+  const y = ref.getUTCFullYear();
+  const m = ref.getUTCMonth();
+  switch (preset) {
+    case 'THIS_MONTH':
+      return { from: clamp(fmt(new Date(Date.UTC(y, m, 1)))), to: clamp(fmt(new Date(Date.UTC(y, m + 1, 0)))) };
+    case 'LAST_MONTH':
+      return { from: clamp(fmt(new Date(Date.UTC(y, m - 1, 1)))), to: clamp(fmt(new Date(Date.UTC(y, m, 0)))) };
+    case 'LAST_3_MONTHS':
+      return { from: clamp(fmt(new Date(Date.UTC(y, m - 2, 1)))), to: clamp(fmt(new Date(Date.UTC(y, m + 1, 0)))) };
+    case 'ALL':
+    default:
+      return { from: '', to: '' };
+  }
 }
 
 // ---- Tabs ----
@@ -149,14 +203,17 @@ function setTab(tab) {
 }
 
 // ---- Filters ----
-const elFilterPeriod = document.getElementById('filter-period');
+const elFilterPreset = document.getElementById('filter-preset');
+const elFilterPresetField = document.getElementById('filter-preset-field');
+const elFilterDateFrom = document.getElementById('filter-date-from');
+const elFilterDateTo = document.getElementById('filter-date-to');
+const elFilterDateFromField = document.getElementById('filter-date-from-field');
+const elFilterDateToField = document.getElementById('filter-date-to-field');
 const elFilterBranch = document.getElementById('filter-branch');
 const elFilterDept = document.getElementById('filter-dept');
 const elFilterDeptField = document.getElementById('filter-dept-field');
 
 function populateFilters(meta) {
-  elFilterPeriod.innerHTML = '<option value="ALL">Semua (YTD)</option>' +
-    (meta.periods || []).map((p) => `<option value="${p}">${p}</option>`).join('');
   elFilterBranch.innerHTML = '<option value="ALL">Semua Cabang</option>' +
     (meta.branches || []).map((b) => `<option value="${b}">${b}</option>`).join('');
   if (meta.departments && meta.departments.length) {
@@ -166,12 +223,58 @@ function populateFilters(meta) {
   } else {
     elFilterDeptField.hidden = true;
   }
-  elFilterPeriod.value = state.period;
+
+  // Kalender tanggal cuma masuk akal kalau GL punya kolom tanggal per baris.
+  const punyaKalender = Boolean(meta.hasDatePerRow && meta.dateRange);
+  elFilterPresetField.hidden = !punyaKalender;
+  elFilterDateFromField.hidden = !punyaKalender;
+  elFilterDateToField.hidden = !punyaKalender;
+  if (punyaKalender) {
+    elFilterDateFrom.min = meta.dateRange.min;
+    elFilterDateFrom.max = meta.dateRange.max;
+    elFilterDateTo.min = meta.dateRange.min;
+    elFilterDateTo.max = meta.dateRange.max;
+  }
+
   elFilterBranch.value = state.branch;
   elFilterDept.value = state.dept;
+  elFilterPreset.value = state.preset;
+  elFilterDateFrom.value = state.dateFrom;
+  elFilterDateTo.value = state.dateTo;
 }
 
-[[elFilterPeriod, 'period'], [elFilterBranch, 'branch'], [elFilterDept, 'dept']].forEach(([el, key]) => {
+elFilterPreset.addEventListener('change', () => {
+  state.preset = elFilterPreset.value;
+  if (state.preset !== 'CUSTOM') {
+    const range = computePresetRange(state.preset, currentMeta);
+    state.dateFrom = range.from;
+    state.dateTo = range.to;
+    elFilterDateFrom.value = state.dateFrom;
+    elFilterDateTo.value = state.dateTo;
+  }
+  writeStateToURL(state);
+  loadActiveTab();
+});
+
+elFilterDateFrom.addEventListener('change', () => {
+  state.dateFrom = elFilterDateFrom.value;
+  state.preset = 'CUSTOM';
+  elFilterPreset.value = 'CUSTOM';
+  elFilterDateTo.min = state.dateFrom || (currentMeta && currentMeta.dateRange ? currentMeta.dateRange.min : '');
+  writeStateToURL(state);
+  loadActiveTab();
+});
+
+elFilterDateTo.addEventListener('change', () => {
+  state.dateTo = elFilterDateTo.value;
+  state.preset = 'CUSTOM';
+  elFilterPreset.value = 'CUSTOM';
+  elFilterDateFrom.max = state.dateTo || (currentMeta && currentMeta.dateRange ? currentMeta.dateRange.max : '');
+  writeStateToURL(state);
+  loadActiveTab();
+});
+
+[[elFilterBranch, 'branch'], [elFilterDept, 'dept']].forEach(([el, key]) => {
   el.addEventListener('change', () => {
     state[key] = el.value;
     writeStateToURL(state);
