@@ -1,94 +1,208 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Papan Status Tim</title>
-<link rel="stylesheet" href="style.css">
-<script>
-(function () {
-  var tema = localStorage.getItem('papan-status-tim:tema');
-  if (tema !== 'dark' && tema !== 'light') {
-    tema = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-  }
-  document.documentElement.setAttribute('data-theme', tema);
-})();
-</script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Financial Dashboard — PT Manufaktur Indonesia Sejahtera</title>
+<link rel="stylesheet" href="style.css" />
+<script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/exceljs.min.js"></script>
 </head>
 <body>
 
-<header class="app-bar">
-  <div class="app-bar-brand">
-    <span class="logo-badge">
-      <img src="https://cdn.prod.website-files.com/5eb6815b620703300b660930/61b33581789f2291a7c17425_Logo.svg" alt="MBCL" class="logo-mbcl">
-    </span>
-    <span class="app-bar-judul">Papan Status Tim</span>
+<!-- ==== Password gate ==== -->
+<div id="login-overlay" class="overlay">
+  <div class="editor-kotak login-kotak">
+    <h2>🔒 Financial Dashboard</h2>
+    <p class="info-lampiran">Masukkan password untuk mengakses dashboard keuangan PT Manufaktur Indonesia Sejahtera.</p>
+    <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" />
+    <p id="login-error" class="pesan-error" hidden></p>
+    <div class="tombol-editor">
+      <button id="login-submit" class="tombol-utama">Masuk</button>
+    </div>
   </div>
-
-  <button id="tombol-tema" class="toggle-tema" type="button" role="switch" aria-checked="false" aria-label="Ganti mode terang/gelap">
-    <span class="toggle-tema-thumb"></span>
-    <span class="toggle-tema-label toggle-tema-label-light">☀ Light</span>
-    <span class="toggle-tema-label toggle-tema-label-dark">☾ Dark</span>
-  </button>
-</header>
-
-<main class="app-main">
-
-<div id="pilih-nama" class="layar">
-  <p class="subjudul">Pilih nama kamu untuk mulai</p>
-  <div id="daftar-nama" class="daftar-tombol-nama"></div>
 </div>
 
-<div id="papan" class="layar" hidden>
-  <header class="header-papan">
-    <p class="info-masuk">
-      Kamu: <strong id="nama-saya-label"></strong>
-      · <button id="tombol-ganti-nama" class="tombol-tautan">ganti nama</button>
-    </p>
-    <a id="tombol-ekspor" class="tombol-ekspor" href="/api/export.csv" download>Export CSV</a>
+<!-- ==== App ==== -->
+<div id="app" hidden>
+
+  <header class="app-bar">
+    <div class="app-bar-brand">
+      <span class="logo-badge">📊</span>
+      <span class="app-bar-judul">Financial Dashboard — PT Manufaktur Indonesia Sejahtera</span>
+    </div>
+    <div class="app-bar-actions">
+      <button id="tombol-export-semua" class="tombol-sekunder tombol-kecil" title="Export Semua Laporan" hidden>⬇ <span class="teks-export-semua">Export Semua Laporan</span></button>
+      <button id="tombol-tema" class="toggle-tema" role="switch" aria-checked="false" aria-label="Ganti tema">
+        <span class="toggle-tema-thumb"></span>
+        <span class="toggle-tema-label toggle-tema-label-light">☀️</span>
+        <span class="toggle-tema-label toggle-tema-label-dark">🌙</span>
+      </button>
+      <button id="tombol-logout" class="tombol-sekunder tombol-kecil">Keluar</button>
+    </div>
   </header>
 
-  <div id="daftar-kartu" class="daftar-kartu"></div>
+  <nav class="tab-nav" id="tab-nav">
+    <button class="tab-item aktif" data-tab="overview">Overview</button>
+    <button class="tab-item" data-tab="pnl">Laba Rugi</button>
+    <button class="tab-item" data-tab="balance">Neraca</button>
+    <button class="tab-item" data-tab="cashflow">Cash Flow</button>
+    <button class="tab-item" data-tab="branch">Kinerja Cabang</button>
+    <button class="tab-item" data-tab="upload">Upload GL</button>
+  </nav>
+
+  <div class="filter-bar" id="filter-bar">
+    <div class="filter-field" id="filter-preset-field">
+      <label for="filter-preset">Periode</label>
+      <select id="filter-preset">
+        <option value="ALL">Semua (YTD)</option>
+        <option value="THIS_MONTH">Bulan Ini</option>
+        <option value="LAST_MONTH">Bulan Lalu</option>
+        <option value="LAST_3_MONTHS">3 Bulan Terakhir</option>
+        <option value="CUSTOM">Kustom…</option>
+      </select>
+    </div>
+    <div class="filter-field filter-field-tanggal" id="filter-date-from-field">
+      <label for="filter-date-from">Dari Tanggal</label>
+      <input type="date" id="filter-date-from" />
+    </div>
+    <div class="filter-field filter-field-tanggal" id="filter-date-to-field">
+      <label for="filter-date-to">Sampai Tanggal</label>
+      <input type="date" id="filter-date-to" />
+    </div>
+    <div class="filter-field">
+      <label for="filter-branch">Cabang</label>
+      <select id="filter-branch"><option value="ALL">Semua Cabang</option></select>
+    </div>
+    <div class="filter-field" id="filter-dept-field" hidden>
+      <label for="filter-dept">Departemen</label>
+      <select id="filter-dept"><option value="ALL">Semua Departemen</option></select>
+    </div>
+    <div class="filter-field filter-field-export">
+      <label class="label-tersembunyi" for="tombol-export-tab">Export</label>
+      <button id="tombol-export-tab" type="button" title="Export data tab ini ke Excel, sesuai filter yang aktif" disabled>⬇ Export Excel</button>
+    </div>
+  </div>
+
+  <main class="layar-dashboard">
+
+    <div id="no-data-banner" class="banner-warning" hidden>
+      ⚠️ Belum ada data GL yang diunggah. Buka tab <strong>Upload GL</strong> untuk mulai.
+    </div>
+
+    <!-- ---- Overview ---- -->
+    <section id="tab-overview" class="tab-panel">
+      <div class="kpi-grid" id="overview-kpi"></div>
+      <div class="chart-grid">
+        <div class="kartu chart-kartu">
+          <h3>Tren Revenue &amp; Expense Bulanan</h3>
+          <canvas id="chart-trend"></canvas>
+        </div>
+        <div class="kartu chart-kartu">
+          <h3>Breakdown Expense (Top 10)</h3>
+          <canvas id="chart-expense"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---- P&L ---- -->
+    <section id="tab-pnl" class="tab-panel" hidden>
+      <div class="kpi-grid" id="pnl-kpi"></div>
+      <div class="kartu chart-kartu">
+        <h3>Alur Laba Rugi</h3>
+        <canvas id="chart-pnl-waterfall"></canvas>
+      </div>
+      <div class="kartu">
+        <h3>Rincian Akun</h3>
+        <div class="table-wrap"><table id="pnl-table"><thead><tr><th>Kategori</th><th>Akun</th><th>Nominal</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ---- Neraca ---- -->
+    <section id="tab-balance" class="tab-panel" hidden>
+      <div class="kpi-grid" id="balance-kpi"></div>
+      <div id="balance-warning" class="banner-warning" hidden></div>
+      <div class="chart-grid">
+        <div class="kartu chart-kartu">
+          <h3>Komposisi Aset</h3>
+          <canvas id="chart-assets"></canvas>
+        </div>
+        <div class="kartu chart-kartu">
+          <h3>Komposisi Liabilitas &amp; Ekuitas</h3>
+          <canvas id="chart-liab-equity"></canvas>
+        </div>
+      </div>
+      <div class="dua-kolom">
+        <div class="kartu">
+          <h3>Aset</h3>
+          <div class="table-wrap"><table id="balance-assets-table"><thead><tr><th>Kategori</th><th>Akun</th><th>Nominal</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="kartu">
+          <h3>Liabilitas &amp; Ekuitas</h3>
+          <div class="table-wrap"><table id="balance-liab-table"><thead><tr><th>Kategori</th><th>Akun</th><th>Nominal</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---- Cash Flow ---- -->
+    <section id="tab-cashflow" class="tab-panel" hidden>
+      <p id="cashflow-note" class="info-lampiran"></p>
+      <div class="kpi-grid" id="cashflow-kpi"></div>
+      <div class="kartu chart-kartu">
+        <h3>Waterfall Cash Flow</h3>
+        <canvas id="chart-cashflow"></canvas>
+      </div>
+    </section>
+
+    <!-- ---- Kinerja Cabang ---- -->
+    <section id="tab-branch" class="tab-panel" hidden>
+      <div class="kartu chart-kartu">
+        <h3>Perbandingan Cabang (klik batang untuk detail)</h3>
+        <canvas id="chart-branch"></canvas>
+      </div>
+      <div class="kartu">
+        <h3>Semua Cabang</h3>
+        <div class="table-wrap"><table id="branch-table"><thead><tr><th>Cabang</th><th>Revenue</th><th>Expense</th><th>Net Income</th><th>Margin %</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ---- Upload GL ---- -->
+    <section id="tab-upload" class="tab-panel" hidden>
+      <div class="kartu">
+        <h3>Data GL Saat Ini</h3>
+        <div id="gl-current-info">Belum ada data.</div>
+      </div>
+      <div class="kartu">
+        <h3>Upload File GL Baru</h3>
+        <p class="info-lampiran">Format .xlsx, maksimal 10MB. File baru akan menggantikan data lama.</p>
+        <div id="dropzone" class="dropzone">
+          <p>📤 Tarik file ke sini, atau</p>
+          <button id="tombol-pilih-gl" class="tombol-sekunder">Pilih File</button>
+          <input id="input-gl-file" type="file" accept=".xlsx" hidden />
+          <p id="dropzone-filename" class="info-lampiran"></p>
+        </div>
+        <div class="filter-field">
+          <label for="input-period-label">Label Periode (opsional, mis. "Jan-Mei 2026")</label>
+          <input id="input-period-label" type="text" placeholder="Kosongkan untuk deteksi otomatis" />
+        </div>
+        <div id="upload-progress" class="upload-progress" hidden><div class="upload-progress-bar"></div></div>
+        <p id="upload-message" class="pesan-error" hidden></p>
+        <button id="tombol-upload-submit" class="tombol-utama" disabled>Proses File GL</button>
+      </div>
+    </section>
+
+  </main>
 </div>
 
-</main>
-
-<div id="editor-overlay" class="overlay" hidden>
-  <div class="editor-kotak">
-    <h2>Ubah Status Kamu</h2>
-
-    <p class="label-editor">Status kerja</p>
-    <div class="pilihan-status" id="pilihan-status">
-      <button type="button" class="tombol-status" data-status="Belum Mulai">Belum Mulai</button>
-      <button type="button" class="tombol-status" data-status="Dikerjakan">Dikerjakan</button>
-      <button type="button" class="tombol-status" data-status="Selesai">Selesai</button>
+<!-- ---- Drill-down modal ---- -->
+<div id="drilldown-overlay" class="overlay" hidden>
+  <div class="editor-kotak drilldown-kotak">
+    <div class="kartu-header-row">
+      <h2 id="drilldown-title">Detail</h2>
+      <button id="drilldown-close" class="tombol-sekunder tombol-kecil">Tutup ✕</button>
     </div>
-
-    <p class="label-editor">Tugas singkat</p>
-    <input type="text" id="input-tugas" maxlength="60" placeholder="Contoh: Desain banner klien X">
-    <p class="hitung-karakter"><span id="sisa-karakter">60</span> karakter tersisa</p>
-
-    <p class="label-editor">Deskripsi (opsional)</p>
-    <textarea id="input-deskripsi" maxlength="500" rows="4" placeholder="Detail tambahan tentang status ini..."></textarea>
-    <p class="hitung-karakter"><span id="sisa-karakter-deskripsi">500</span> karakter tersisa</p>
-
-    <p class="label-editor">Lampiran (opsional)</p>
-    <div class="area-lampiran">
-      <input type="file" id="input-file" hidden>
-      <button type="button" id="tombol-pilih-file" class="tombol-sekunder">Pilih File</button>
-      <p class="info-lampiran">
-        <span id="nama-lampiran">Tidak ada lampiran</span>
-        <a id="link-lampiran" href="#" target="_blank" rel="noopener" hidden>(lihat)</a>
-      </p>
-      <button type="button" id="tombol-hapus-lampiran" class="tombol-tautan" hidden>Hapus lampiran</button>
-    </div>
-
-    <p id="pesan-error" class="pesan-error" hidden></p>
-
-    <div class="tombol-editor">
-      <button id="tombol-simpan" class="tombol-utama">Simpan</button>
-      <button id="tombol-batal" class="tombol-sekunder">Batal</button>
-    </div>
+    <div id="drilldown-breadcrumb" class="breadcrumb"></div>
+    <div class="table-wrap"><table id="drilldown-table"><thead><tr><th>Akun</th><th>Nominal</th></tr></thead><tbody></tbody></table></div>
   </div>
 </div>
 

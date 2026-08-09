@@ -1,7 +1,7 @@
 {
-  "name": "papan-status-tim",
+  "name": "financial-dashboard-manufaktur-indonesia-sejahtera",
   "version": "1.0.0",
-  "description": "Papan status kerja tim sederhana - satu layar, tanpa login rumit",
+  "description": "Dashboard eksekutif keuangan (GL upload -> P&L, Neraca, Cash Flow, Kinerja Cabang) untuk PT Manufaktur Indonesia Sejahtera",
   "private": true,
   "main": "server.js",
   "scripts": {
@@ -10,7 +10,11 @@
   "dependencies": {
     "@upstash/redis": "^1.38.0",
     "@vercel/blob": "^2.6.1",
+    "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "multer": "^2.2.0"
+  },
+  "devDependencies": {
+    "chart.js": "^4.4.4"
   }
 }
