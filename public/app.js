@@ -440,7 +440,7 @@ async function loadBalance() {
   renderKpiGrid(document.getElementById('balance-kpi'), [
     { label: 'Total Assets', value: rupiah(data.summary.totalAssets) },
     { label: 'Total Liabilities', value: rupiah(data.summary.totalLiabilities) },
-    { label: 'Total Equity', value: rupiah(data.summary.totalEquity) },
+    { label: 'Total Equity', value: rupiah(data.summary.totalEquity), sub: `Termasuk Laba Berjalan ${rupiah(data.equity.currentPeriodNetIncome)}` },
     { label: 'Current Ratio', value: data.ratios.currentRatio != null ? fmtNum.format(data.ratios.currentRatio) : '-' },
   ]);
 
@@ -627,8 +627,11 @@ elTombolUploadSubmit.addEventListener('click', async () => {
       elUploadMessage.hidden = false;
       return;
     }
+    const metodePeringatan = data.meta.calculationMethod === 'balance-fallback'
+      ? ' ⚠️ Kolom Debit/Kredit tidak terdeteksi, hasil pakai kolom Balance saja — cek detail di bawah.'
+      : '';
     elUploadMessage.className = 'pesan-sukses';
-    elUploadMessage.textContent = `✅ Berhasil! ${data.meta.rowCount} baris transaksi diproses, periode: ${data.meta.periodLabel}.`;
+    elUploadMessage.textContent = `✅ Berhasil! ${data.meta.rowCount} baris transaksi diproses (data lama sudah digantikan), periode: ${data.meta.periodLabel}.${metodePeringatan}`;
     elUploadMessage.hidden = false;
     pendingGlFile = null;
     elDropzoneFilename.textContent = '';
@@ -656,17 +659,36 @@ function waktuRelatif(iso) {
   return `${Math.floor(jam / 24)} hari lalu`;
 }
 
+const KOLOM_LABEL = {
+  date: 'Tanggal', coaNo: 'CoA No', coaDescription: 'Deskripsi Akun', branch: 'Cabang',
+  department: 'Departemen', debit: 'Debit', credit: 'Kredit', balance: 'Balance',
+};
+
 function renderGlCurrentInfo(meta) {
   const el = document.getElementById('gl-current-info');
   if (!meta) {
     el.innerHTML = '<p class="info-lampiran">Belum ada data GL yang diunggah.</p>';
     return;
   }
+
+  const kolomTerdeteksi = (meta.detectedColumns || []).map((k) => KOLOM_LABEL[k] || k).join(', ');
+  const pakaiDebitKredit = meta.calculationMethod === 'debit-credit';
+  const metodeBaris = pakaiDebitKredit
+    ? `<p class="info-lampiran">✅ Dihitung dari kolom <strong>Debit &amp; Kredit</strong> (akurat, mengikuti normal balance tiap akun).</p>`
+    : `<p class="pesan-error">⚠️ Kolom Debit/Kredit tidak terdeteksi — dihitung dari kolom <strong>Balance</strong> saja. Ini bisa TIDAK AKURAT kalau Balance adalah saldo kumulatif (bukan net per-baris). Periksa nama kolom di file Excel Anda (cek daftar kolom terdeteksi di bawah).</p>`;
+
+  const unclassifiedWarning = meta.unclassifiedCoaCount
+    ? `<p class="pesan-error">⚠️ ${meta.unclassifiedCoaCount} kode akun tidak dikenali polanya (bukan awalan 1-6), contoh: ${meta.unclassifiedCoaSample.join(', ')} — baris ini DIABAIKAN dari semua total laporan.</p>`
+    : '';
+
   el.innerHTML = `
     <p><strong>File:</strong> ${meta.filename}</p>
     <p><strong>Periode:</strong> ${meta.periodLabel}</p>
-    <p><strong>Jumlah baris:</strong> ${meta.rowCount}</p>
+    <p><strong>Jumlah baris ter-load:</strong> ${meta.rowCount}</p>
     <p><strong>Cabang terdeteksi:</strong> ${meta.branches.join(', ')}</p>
+    <p><strong>Kolom terdeteksi:</strong> ${kolomTerdeteksi || '-'}</p>
+    ${metodeBaris}
+    ${unclassifiedWarning}
     <p><strong>Diunggah:</strong> ${waktuRelatif(meta.uploadedAt)}</p>
   `;
 }

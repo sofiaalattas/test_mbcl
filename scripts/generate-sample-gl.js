@@ -66,7 +66,13 @@ async function main() {
     row.getCell(8).value = Math.round(debit - credit);
   }
 
-  // Transaksi P&L per bulan per cabang
+  // Transaksi P&L per bulan per cabang — sambil jalan, catat total revenue/cogs/opex
+  // supaya Net Income bisa dihitung dan dipakai untuk plug ekuitas di bawah (double-entry
+  // konsisten: Laba Ditahan (saldo AWAL periode) + Laba Berjalan (dihitung dari transaksi
+  // P&L ini oleh aplikasi) harus pas dengan Total Assets - Total Liabilities - Modal).
+  let totalRevenue = 0;
+  let totalCogs = 0;
+  let totalOpex = 0;
   for (const month of MONTHS) {
     const [y, m] = month.split('-').map(Number);
     const date = new Date(Date.UTC(y, m - 1, 20));
@@ -87,12 +93,19 @@ async function main() {
       addRow({ date, coaNo: '6102', desc: 'Sewa Tempat', branch, dept: 'Operasional', debit: sewa, credit: 0 });
       addRow({ date, coaNo: '6103', desc: 'Listrik & Air', branch, dept: 'Operasional', debit: listrik, credit: 0 });
       addRow({ date, coaNo: '6104', desc: 'Marketing', branch, dept: 'Marketing', debit: marketing, credit: 0 });
+
+      totalRevenue += revenueFood + revenueDrink;
+      totalCogs += cogs;
+      totalOpex += gaji + sewa + listrik + marketing;
     }
   }
+  const netIncomeFromPnL = Math.round(totalRevenue - totalCogs - totalOpex);
 
   // Saldo neraca akhir periode (Mei 2026), per cabang disederhanakan jadi 1 baris gabungan tiap akun.
-  // "Laba Ditahan" dihitung sebagai angka plug supaya Assets = Liabilities + Equity persis
-  // (mensimulasikan GL yang sudah balance, seperti GL asli pada umumnya).
+  // "Laba Ditahan" dihitung sebagai angka plug supaya Assets = Liabilities + Equity + Laba
+  // Berjalan (Net Income dari transaksi P&L di atas) persis balance — dashboard menambahkan
+  // Net Income periode berjalan ke Ekuitas (lihat lib/calculations.js computeBalanceSheet),
+  // jadi plug di sini HARUS memperhitungkan itu supaya tidak dobel/kurang hitung.
   const balanceDate = new Date(Date.UTC(2026, 4, 31));
   const nonPlugBalances = {
     '1101': 80_000_000 + rand() * 40_000_000, // Kas
@@ -106,7 +119,7 @@ async function main() {
   };
   const totalAssets = nonPlugBalances['1101'] + nonPlugBalances['1102'] + nonPlugBalances['1103'] + nonPlugBalances['1201'] + nonPlugBalances['1202'];
   const totalLiabilities = nonPlugBalances['2101'] + nonPlugBalances['2201'];
-  nonPlugBalances['3102'] = totalAssets - totalLiabilities - nonPlugBalances['3101']; // Laba Ditahan (plug)
+  nonPlugBalances['3102'] = totalAssets - totalLiabilities - nonPlugBalances['3101'] - netIncomeFromPnL; // Laba Ditahan (plug)
 
   const balanceAccounts = ACCOUNTS.filter((a) => a.type.startsWith('asset') || a.type.startsWith('liability') || a.type === 'equity');
   for (const acc of balanceAccounts) {

@@ -24,31 +24,35 @@ Buka `http://localhost:3000`, masuk dengan password dari `APP_PASSWORD` (default
 
 ### Coba dengan data contoh
 
-Ada file contoh di `sample-data/contoh-GL.xlsx` (7 cabang, 6 bulan transaksi P&L + saldo neraca akhir periode) — unggah file ini di tab **Upload GL** untuk melihat dashboard terisi. File ini juga jadi **acuan format kolom** yang dikenali sistem:
+Ada 2 file contoh:
+- `sample-data/contoh-GL.xlsx` — 7 cabang, 6 bulan transaksi P&L + saldo neraca akhir periode. Generate ulang: `node scripts/generate-sample-gl.js`.
+- `sample-data/contoh-GL-format-real.xlsx` — 16 kolom meniru format export ESB umum (Journal Date, Created Date, Reference Number, Dr/Cr Amount berlabel "(IDR)", dll). Generate ulang: `node scripts/generate-real-format-gl.js`.
+
+Unggah salah satu di tab **Upload GL** untuk melihat dashboard terisi. Kolom yang dikenali sistem (nama header boleh variasi kapitalisasi/spasi, dan suffix satuan mata uang seperti `(IDR)`/`(Rp)` otomatis diabaikan saat pencocokan):
 
 | Kolom yang dikenali (nama boleh variasi) | Wajib? |
 |---|---|
-| Tanggal / Date | Tidak wajib, tapi tanpa ini tren bulanan tidak muncul |
+| Tanggal / Date / Journal Date | Tidak wajib, tapi tanpa ini tren bulanan & filter kalender tidak muncul. **Bukan** "Created Date" (itu tanggal audit/pembuatan record, sengaja diabaikan) |
 | CoA No / Account Code / Kode Akun | **Wajib** |
 | CoA Description / Nama Akun | Tidak wajib |
 | Branch / Cabang | **Wajib** |
-| Department / Departemen / Divisi | Tidak wajib |
-| Dr Amount / Debit | Salah satu dari Dr/Cr **atau** Balance wajib ada |
+| Department / Departemen / Divisi / Cost Center | Tidak wajib |
+| Dr Amount / Debit (boleh diberi label satuan, mis. "Dr Amount (IDR)") | Salah satu dari Dr/Cr **atau** Balance wajib ada — **Dr/Cr selalu diprioritaskan** kalau ada, Balance hanya dipakai sebagai fallback |
 | Cr Amount / Credit / Kredit | " |
 | Balance / Saldo | " |
 
-Kolom **CoA No** harus mengikuti klasifikasi standar (digit pertama menentukan jenis akun):
+Kolom **CoA No** harus mengikuti klasifikasi standar (digit pertama menentukan jenis akun & normal balance-nya):
 
 ```
-1xxx = Asset      (11xx Current Asset, 12xx Fixed Asset)
-2xxx = Liability  (21xx Current Liability, 22xx Long-term Liability)
-3xxx = Equity
-4xxx = Revenue
-5xxx = COGS (Cost of Goods Sold)
-6xxx = Operating Expense
+1xxx = Asset      (11xx Current Asset, 12xx Fixed Asset)   → normal balance DEBIT  → saldo = Debit − Kredit
+2xxx = Liability  (21xx Current Liability, 22xx LT Liab.)  → normal balance KREDIT → saldo = Kredit − Debit
+3xxx = Equity                                              → normal balance KREDIT → saldo = Kredit − Debit
+4xxx = Revenue                                             → normal balance KREDIT → saldo = Kredit − Debit
+5xxx = COGS (Cost of Goods Sold)                           → normal balance DEBIT  → saldo = Debit − Kredit
+6xxx = Operating Expense                                   → normal balance DEBIT  → saldo = Debit − Kredit
 ```
 
-Untuk regenerate/ubah file contoh: `node scripts/generate-sample-gl.js`.
+**Cara verifikasi hasil parsing benar:** buka tab **Upload GL** setelah mengunggah — panel "Data GL Saat Ini" menampilkan daftar kolom yang terdeteksi dan metode perhitungan yang dipakai (✅ Debit & Kredit = akurat, ⚠️ Balance saja = berpotensi tidak akurat kalau kolom Balance ternyata saldo kumulatif bukan net per-baris). Kalau kolom Dr/Cr Amount Anda tidak muncul di daftar terdeteksi, cek nama headernya — sistem butuh minimal salah satu alias di atas.
 
 ## 2. Deploy ke Vercel (production)
 
